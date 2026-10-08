@@ -5,6 +5,13 @@
     dest: "{{ remote_tmp_dir }}"
     remote_src: yes
 
+- name: Set Vault installation path in install.conf
+  lineinfile:
+    path: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}/install.conf"
+    regexp: '^INSTALL_PATH='
+    line: "INSTALL_PATH={{ install_path | default('/opt') }}"
+    backup: yes
+
 - name: Run Vault upgrade script
   command: bash upgrade.sh
   args:

@@ -23,7 +23,8 @@ This directory contains a fully self-contained automation framework to download,
    ```bash
    pip install requests python-dotenv ansible
    ```
-2. **Configuration (.env)**: Create a `.env` file in the `ansible/scripts/` directory with your RankEZ portal credentials (for auto-discovery) and Zendesk credentials (for downloading packages).
+2. **Target Host Tools**: Every upgrade target must have Docker Engine 26 or newer, the Docker Buildx plugin, and the Docker Compose plugin available to the Ansible SSH user (with privilege escalation). Preflight checks these before stopping any services.
+3. **Configuration (.env)**: Create a `.env` file in the `ansible/scripts/` directory with your RankEZ portal credentials (for auto-discovery) and Zendesk credentials (for downloading packages).
    ```env
    RANKEZ_URL=https://192.168.0.21
    RANKEZ_USERNAME=admin
@@ -61,6 +62,12 @@ python scripts/pre_upgrade_inventory.py \
   --version 5.9.0
 ```
 
+For installations outside `/opt`, pass the existing installation base directory with `--install-path` (the default is `/opt`):
+```bash
+python scripts/pre_upgrade_inventory.py --install-path /data --primary-vault 192.168.0.11 --standby-vault 192.168.0.12 --ssh-user cloud-user --version 5.9.0
+```
+The generated inventory includes `install_path=/data`; Ansible applies it to each component's `INSTALL_PATH` in `install.conf` before running the upgrade, and uses it for component shutdown and CP custom-configuration backup/restore. For a manually maintained inventory, set `install_path` under `[all:vars]`.
+
 **What this does:**
 1. Logs into the RankEZ API.
 2. Identifies the IP addresses of all active PAC, PSM, CPM, and CP nodes.
@@ -87,7 +94,7 @@ During the `Preflight` phase, the automation will stop the `dr-manager` service 
 
 ## Playbook Workflow (What Happens Automatically)
 
-1. **Preflight Checks**: Verifies Docker version (>=26) and pauses for snapshots.
+1. **Preflight Checks**: Verifies Docker version (>=26), Docker Buildx (`docker buildx version`), and Docker Compose (`docker compose version`) are available on every target before pausing for snapshots. Install the Docker Buildx and Compose plugins on hosts where either check fails; the upgrade is stopped before service shutdown if a prerequisite is missing.
 2. **Graceful Shutdown**: Stops all frontend components (CPM, PSM, PAC) in the safe sequence, followed by stopping the Vault services.
 3. **Package Transfer**: Intelligently copies *only* the required `.tar.gz` packages to `/tmp/rankez_upgrade` on the specific target VMs.
 4. **Vault Upgrades**: Upgrades Primary Vault, then Standby Vault. Validates DR status via `docker exec dr-manager dr-control show-status`.

@@ -13,6 +13,31 @@
     msg: "Docker version is {{ docker_version }}, which is less than 26. Please upgrade Docker first."
   when: docker_version | int < 26
 
+- name: Check Docker Buildx availability
+  command: docker buildx version
+  register: docker_buildx_output
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups.get('vaults', []) or inventory_hostname in groups.get('frontend', [])
+
+- name: Fail if Docker Buildx is unavailable
+  fail:
+    msg: "Docker Buildx is required for RankEZ upgrades but 'docker buildx version' failed. Install the Docker Buildx plugin before continuing."
+  when:
+    - inventory_hostname in groups.get('vaults', []) or inventory_hostname in groups.get('frontend', [])
+    - docker_buildx_output.rc != 0
+
+- name: Check Docker Compose availability
+  command: docker compose version
+  register: docker_compose_output
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Docker Compose is unavailable
+  fail:
+    msg: "Docker Compose plugin is required by the upgrade automation but 'docker compose version' failed. Install the Docker Compose plugin before continuing."
+  when: docker_compose_output.rc != 0
+
 - name: Check if dr-manager is running
   command: docker ps -q --filter "name=dr-manager"
   register: dr_manager_status

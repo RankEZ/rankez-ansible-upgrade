@@ -6,6 +6,12 @@
         src: "{{ remote_tmp_dir }}/pam-pac-{{ upgrade_version }}.tar.gz"
         dest: "{{ remote_tmp_dir }}"
         remote_src: yes
+    - name: Set PAC installation path in install.conf
+      lineinfile:
+        path: "{{ remote_tmp_dir }}/pam-pac-{{ upgrade_version }}/install.conf"
+        regexp: '^INSTALL_PATH='
+        line: "INSTALL_PATH={{ install_path | default('/opt') }}"
+        backup: yes
     - name: Run PAC upgrade script
       command: bash upgrade.sh
       args:
@@ -26,6 +32,12 @@
         src: "{{ remote_tmp_dir }}/pam-psm-{{ upgrade_version }}.tar.gz"
         dest: "{{ remote_tmp_dir }}"
         remote_src: yes
+    - name: Set PSM installation path in install.conf
+      lineinfile:
+        path: "{{ remote_tmp_dir }}/pam-psm-{{ upgrade_version }}/install.conf"
+        regexp: '^INSTALL_PATH='
+        line: "INSTALL_PATH={{ install_path | default('/opt') }}"
+        backup: yes
     - name: Run PSM upgrade script (Long timeout for Docker image loading)
       command: bash upgrade.sh
       args:
@@ -48,6 +60,12 @@
         src: "{{ remote_tmp_dir }}/pam-cpm-{{ upgrade_version }}.tar.gz"
         dest: "{{ remote_tmp_dir }}"
         remote_src: yes
+    - name: Set CPM installation path in install.conf
+      lineinfile:
+        path: "{{ remote_tmp_dir }}/pam-cpm-{{ upgrade_version }}/install.conf"
+        regexp: '^INSTALL_PATH='
+        line: "INSTALL_PATH={{ install_path | default('/opt') }}"
+        backup: yes
     - name: Run CPM upgrade script
       command: bash upgrade.sh
       args:

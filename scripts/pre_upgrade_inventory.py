@@ -13,7 +13,12 @@ def main():
     parser.add_argument("--ssh-user", default="cloud-user", help="SSH user for Ansible")
     parser.add_argument("--output", default="inventory.ini", help="Path to output the inventory file")
     parser.add_argument("--version", default="5.9.0", help="Target RankEZ upgrade version (e.g., 5.9.0)")
+    parser.add_argument("--install-path", default="/opt", help="Existing RankEZ installation base path (default: /opt)")
     args = parser.parse_args()
+
+    if not args.install_path.startswith("/") or any(char.isspace() for char in args.install_path):
+        parser.error("--install-path must be an absolute path without whitespace")
+    args.install_path = args.install_path.rstrip("/") or "/"
 
     load_dotenv()
     url = os.environ.get("RANKEZ_URL")
@@ -112,6 +117,7 @@ ansible_become=yes
 upgrade_version={args.version}
 local_bundle_dir=scripts/onebox-offline-rhel-v{args.version}/packages
 remote_tmp_dir=/tmp/rankez_upgrade
+install_path={args.install_path}
 """
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)

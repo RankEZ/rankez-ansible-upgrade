@@ -6,15 +6,23 @@
     remote_src: yes
   when: inventory_hostname in groups.get('cp', [])
 
+- name: Set CP installation path in install.conf
+  lineinfile:
+    path: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}/install.conf"
+    regexp: '^INSTALL_PATH='
+    line: "INSTALL_PATH={{ install_path | default('/opt') }}"
+    backup: yes
+  when: inventory_hostname in groups.get('cp', [])
+
 - name: Check if CP custom configuration exists
   stat:
-    path: /opt/credprov/conf/cus/credprov.conf
+    path: "{{ install_path | default('/opt') }}/credprov/conf/cus/credprov.conf"
   register: cp_custom_config
   when: inventory_hostname in groups.get('cp', [])
 
 - name: Backup CP custom configuration
   copy:
-    src: /opt/credprov/conf/cus/credprov.conf
+    src: "{{ install_path | default('/opt') }}/credprov/conf/cus/credprov.conf"
     dest: "{{ remote_tmp_dir }}/credprov.conf.bak"
     remote_src: yes
   when: 
@@ -30,7 +38,7 @@
 - name: Restore CP custom configuration
   copy:
     src: "{{ remote_tmp_dir }}/credprov.conf.bak"
-    dest: /opt/credprov/conf/cus/credprov.conf
+    dest: "{{ install_path | default('/opt') }}/credprov/conf/cus/credprov.conf"
     remote_src: yes
   when: 
     - inventory_hostname in groups.get('cp', [])

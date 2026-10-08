@@ -2,19 +2,19 @@
 - name: Stop CPM
   command: docker compose stop
   args:
-    chdir: /opt/cpm/bin
+    chdir: "{{ install_path | default('/opt') }}/cpm/bin"
   when: inventory_hostname in groups.get('cpm', [])
 
 - name: Stop PSM
   command: docker compose stop
   args:
-    chdir: /opt/psm/bin
+    chdir: "{{ install_path | default('/opt') }}/psm/bin"
   when: inventory_hostname in groups.get('psm', [])
   
 - name: Stop PAC
   command: docker compose stop
   args:
-    chdir: /opt/pac/bin
+    chdir: "{{ install_path | default('/opt') }}/pac/bin"
   when: inventory_hostname in groups.get('pac', [])
 
 - name: Stop Vault Components

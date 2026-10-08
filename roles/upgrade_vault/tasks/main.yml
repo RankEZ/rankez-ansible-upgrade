@@ -1,0 +1,41 @@
+---
+- name: Extract Vault package
+  unarchive:
+    src: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}.tar.gz"
+    dest: "{{ remote_tmp_dir }}"
+    remote_src: yes
+
+- name: Run Vault upgrade script
+  command: bash upgrade.sh
+  args:
+    chdir: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}"
+  register: vault_upgrade_result
+  ignore_errors: true
+
+- name: Debug Vault upgrade output
+  debug:
+    var: vault_upgrade_result.stdout_lines
+
+- name: Ensure Vault container is started
+  command: docker start vault
+
+- name: Ensure dr-manager container is started
+  command: docker start dr-manager
+  ignore_errors: true
+
+- name: Pause to allow services to initialize
+  pause:
+    seconds: 15
+
+- name: Validate DR replication status
+  command: docker exec dr-manager dr-control show-status
+  register: dr_status
+  changed_when: false
+
+- name: Debug DR replication status
+  debug:
+    var: dr_status.stdout_lines
+
+- name: Refresh subscription (Standby Vault only)
+  command: docker exec dr-manager dr-control refresh-subscription
+  when: inventory_hostname in groups['standby_vault']

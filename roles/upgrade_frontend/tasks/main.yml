@@ -1,0 +1,62 @@
+---
+- name: Upgrade PAC Component
+  block:
+    - name: Extract PAC package
+      unarchive:
+        src: "{{ remote_tmp_dir }}/pam-pac-{{ upgrade_version }}.tar.gz"
+        dest: "{{ remote_tmp_dir }}"
+        remote_src: yes
+    - name: Run PAC upgrade script
+      command: bash upgrade.sh
+      args:
+        chdir: "{{ remote_tmp_dir }}/pam-pac-{{ upgrade_version }}"
+      register: pac_upgrade_result
+      failed_when: 
+        - pac_upgrade_result.rc != 0
+        - "'already version' not in pac_upgrade_result.stdout"
+    - name: Debug PAC upgrade output
+      debug:
+        var: pac_upgrade_result.stdout_lines
+  when: inventory_hostname in groups.get('pac', [])
+
+- name: Upgrade PSM Component
+  block:
+    - name: Extract PSM package
+      unarchive:
+        src: "{{ remote_tmp_dir }}/pam-psm-{{ upgrade_version }}.tar.gz"
+        dest: "{{ remote_tmp_dir }}"
+        remote_src: yes
+    - name: Run PSM upgrade script (Long timeout for Docker image loading)
+      command: bash upgrade.sh
+      args:
+        chdir: "{{ remote_tmp_dir }}/pam-psm-{{ upgrade_version }}"
+      async: 1200
+      poll: 30
+      register: psm_upgrade_result
+      failed_when: 
+        - psm_upgrade_result.rc != 0
+        - "'already version' not in psm_upgrade_result.stdout"
+    - name: Debug PSM upgrade output
+      debug:
+        var: psm_upgrade_result.stdout_lines
+  when: inventory_hostname in groups.get('psm', [])
+
+- name: Upgrade CPM Component
+  block:
+    - name: Extract CPM package
+      unarchive:
+        src: "{{ remote_tmp_dir }}/pam-cpm-{{ upgrade_version }}.tar.gz"
+        dest: "{{ remote_tmp_dir }}"
+        remote_src: yes
+    - name: Run CPM upgrade script
+      command: bash upgrade.sh
+      args:
+        chdir: "{{ remote_tmp_dir }}/pam-cpm-{{ upgrade_version }}"
+      register: cpm_upgrade_result
+      failed_when: 
+        - cpm_upgrade_result.rc != 0
+        - "'already version' not in cpm_upgrade_result.stdout"
+    - name: Debug CPM upgrade output
+      debug:
+        var: cpm_upgrade_result.stdout_lines
+  when: inventory_hostname in groups.get('cpm', [])

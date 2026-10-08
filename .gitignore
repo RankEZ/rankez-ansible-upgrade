@@ -1,0 +1,25 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Build/output
+cache/
+*.egg-info/
+__pycache__/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Environment (if any)
+.env
+
+# Vault secrets
+*.vault
+
+# Temporary files
+*.tmp
+*~

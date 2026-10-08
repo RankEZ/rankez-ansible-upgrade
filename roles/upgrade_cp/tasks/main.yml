@@ -1,0 +1,37 @@
+---
+- name: Extract CP package
+  unarchive:
+    src: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}.tar.gz"
+    dest: "{{ remote_tmp_dir }}"
+    remote_src: yes
+  when: inventory_hostname in groups.get('cp', [])
+
+- name: Check if CP custom configuration exists
+  stat:
+    path: /opt/credprov/conf/cus/credprov.conf
+  register: cp_custom_config
+  when: inventory_hostname in groups.get('cp', [])
+
+- name: Backup CP custom configuration
+  copy:
+    src: /opt/credprov/conf/cus/credprov.conf
+    dest: "{{ remote_tmp_dir }}/credprov.conf.bak"
+    remote_src: yes
+  when: 
+    - inventory_hostname in groups.get('cp', [])
+    - cp_custom_config.stat.exists
+
+- name: Run CP upgrade script
+  command: bash upgrade.sh
+  args:
+    chdir: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}"
+  when: inventory_hostname in groups.get('cp', [])
+
+- name: Restore CP custom configuration
+  copy:
+    src: "{{ remote_tmp_dir }}/credprov.conf.bak"
+    dest: /opt/credprov/conf/cus/credprov.conf
+    remote_src: yes
+  when: 
+    - inventory_hostname in groups.get('cp', [])
+    - cp_custom_config.stat.exists

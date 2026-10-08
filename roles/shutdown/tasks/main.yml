@@ -1,0 +1,33 @@
+---
+- name: Stop CPM
+  command: docker compose stop
+  args:
+    chdir: /opt/cpm/bin
+  when: inventory_hostname in groups.get('cpm', [])
+
+- name: Stop PSM
+  command: docker compose stop
+  args:
+    chdir: /opt/psm/bin
+  when: inventory_hostname in groups.get('psm', [])
+  
+- name: Stop PAC
+  command: docker compose stop
+  args:
+    chdir: /opt/pac/bin
+  when: inventory_hostname in groups.get('pac', [])
+
+- name: Stop Vault Components
+  block:
+    - name: Check dr-manager status
+      command: docker ps -q --filter "name=dr-manager"
+      register: dr_status
+      changed_when: false
+      
+    - name: Stop dr-manager
+      command: docker stop dr-manager
+      when: dr_status.stdout != ""
+
+    - name: Stop Vault container
+      command: docker stop vault
+  when: inventory_hostname in groups.get('vaults', [])

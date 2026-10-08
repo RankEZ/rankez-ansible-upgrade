@@ -1,0 +1,41 @@
+---
+- name: RankEZ Upgrade Automation
+  hosts: all
+  gather_facts: yes
+
+- name: Preflight Checks
+  hosts: all
+  become: yes
+  roles:
+    - preflight
+
+- name: Graceful Shutdown
+  hosts: all
+  become: yes
+  roles:
+    - shutdown
+
+- name: Transfer Packages
+  hosts: all
+  become: yes
+  roles:
+    - copy_packages
+
+- name: Upgrade Vaults
+  hosts: vaults
+  become: yes
+  serial: 1
+  roles:
+    - upgrade_vault
+
+- name: Upgrade Frontend (PAC, PSM, CPM)
+  hosts: frontend
+  become: yes
+  roles:
+    - upgrade_frontend
+
+- name: Upgrade Credential Provider (CP)
+  hosts: frontend
+  become: yes
+  roles:
+    - upgrade_cp

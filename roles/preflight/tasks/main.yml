@@ -1,0 +1,29 @@
+---
+- name: Check Docker version
+  command: docker --version
+  register: docker_version_output
+  changed_when: false
+
+- name: Parse Docker version
+  set_fact:
+    docker_version: "{{ docker_version_output.stdout | regex_search('Docker version ([0-9]+)', '\\1') | first }}"
+
+- name: Fail if Docker version is less than 26
+  fail:
+    msg: "Docker version is {{ docker_version }}, which is less than 26. Please upgrade Docker first."
+  when: docker_version | int < 26
+
+- name: Check if dr-manager is running
+  command: docker ps -q --filter "name=dr-manager"
+  register: dr_manager_status
+  changed_when: false
+
+- name: Stop dr-manager for VM snapshots
+  command: docker stop dr-manager
+  when: dr_manager_status.stdout != ""
+  ignore_errors: true
+
+- name: Pause for VM snapshot
+  pause:
+    prompt: "dr-manager has been stopped. Please take a VM snapshot now. Press Enter to continue..."
+  when: dr_manager_status.stdout != ""

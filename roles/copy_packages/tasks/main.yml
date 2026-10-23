@@ -7,30 +7,30 @@
 
 - name: Copy Vault package
   copy:
-    src: "{{ local_bundle_dir }}/pam-vault-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-vault-{{ upgrade_version }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups['vaults']
 
 - name: Copy PAC package
   copy:
-    src: "{{ local_bundle_dir }}/pam-pac-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-pac-{{ upgrade_version }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('pac', [])
 
 - name: Copy PSM package
   copy:
-    src: "{{ local_bundle_dir }}/pam-psm-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-psm-{{ upgrade_version }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('psm', [])
 
 - name: Copy CPM package
   copy:
-    src: "{{ local_bundle_dir }}/pam-cpm-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-cpm-{{ upgrade_version }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('cpm', [])
 
 - name: Copy CP package
   copy:
-    src: "{{ local_bundle_dir }}/pam-cp-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-cp-{{ upgrade_version }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('cp', [])

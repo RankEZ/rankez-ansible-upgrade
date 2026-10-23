@@ -1,7 +1,71 @@
 ---
-- name: RankEZ Upgrade Automation
+- name: Verify local upgrade bundle (packages present on control node)
   hosts: all
-  gather_facts: yes
+  gather_facts: no
+  tasks:
+    - name: Build list of required package names from groups present
+      set_fact:
+        _required_pkgs: "{{ ['vault'] + (['pac'] if groups.get('pac') else []) + (['psm'] if groups.get('psm') else []) + (['cpm'] if groups.get('cpm') else []) + (['cp'] if groups.get('cp') else []) }}"
+      delegate_to: localhost
+      run_once: yes
+
+    - name: Assert required tarballs exist locally
+      stat:
+        path: "{{ local_bundle_dir | realpath }}/pam-{{ item }}-{{ upgrade_version }}.tar.gz"
+      register: _pkg_check
+      delegate_to: localhost
+      run_once: yes
+      loop: "{{ _required_pkgs }}"
+
+    - name: Fail if a required tarball is missing
+      fail:
+        msg: >-
+          Missing upgrade package '{{ item.item }}'. Expected at
+          '{{ local_bundle_dir | realpath }}/pam-{{ item.item }}-{{ upgrade_version }}.tar.gz'.
+          Run ./scripts/prep_offline_bundle.sh (or ./rankez-upgrade download) to generate the
+          bundle, or pass --bundle-dir to point at the packages/ folder.
+      when: not item.stat.exists
+      delegate_to: localhost
+      run_once: yes
+      loop: "{{ _pkg_check.results }}"
+
+- name: Upgrade plan and confirmation
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Compute host counts
+      set_fact:
+        _total_hosts: "{{ groups['all'] | length }}"
+        _vault_hosts: "{{ groups.get('vaults', []) | length }}"
+        _frontend_hosts: "{{ groups.get('frontend', []) | length }}"
+      delegate_to: localhost
+      run_once: yes
+
+    - name: Print planned upgrade order (dry-run summary)
+      debug:
+        msg: >-
+          PLAN: upgrade {{ _total_hosts }} host(s) from {{ current_version | default('unknown') }}
+          to {{ upgrade_version }}. Order: verify bundle -> preflight (pause for VM snapshot)
+          -> graceful shutdown -> transfer packages -> upgrade vaults ({{ _vault_hosts }}, serial)
+          -> upgrade frontend PAC/PSM/CPM ({{ _frontend_hosts }}) -> upgrade CP.
+      delegate_to: localhost
+      run_once: yes
+
+    - name: Confirm before proceeding
+      pause:
+        prompt: "About to upgrade {{ _total_hosts }} host(s) from {{ current_version | default('unknown') }} to {{ upgrade_version }}. Type the target version ({{ upgrade_version }}) to continue:"
+        echo: yes
+      register: _confirm
+      delegate_to: localhost
+      run_once: yes
+      when: not ansible_check_mode
+
+    - name: Abort if confirmation does not match target version
+      fail:
+        msg: "Aborted: you typed '{{ _confirm.user_input | default('') }}' but the target version is {{ upgrade_version }}."
+      when:
+        - not ansible_check_mode
+        - _confirm.user_input | default('') | trim != upgrade_version
 
 - name: Preflight Checks
   hosts: all

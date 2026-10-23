@@ -1,0 +1,107 @@
+#!/bin/bash
+# rankez-upgrade - single entry point for the RankEZ upgrade framework.
+# Thin wrapper; each subcommand delegates to a dedicated script and each also
+# works standalone (see scripts/).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPTS="$SCRIPT_DIR/scripts"
+
+# shellcheck source=/dev/null
+source "$SCRIPTS/lib/common.sh"
+
+usage() {
+    cat <<'USAGE'
+Usage: ./rankez-upgrade <command> [options]
+
+Commands:
+  setup       Create the workspace and .env (hidden password prompt), chmod 600.
+  download    Download the offline bundle (prep_offline_bundle.sh).
+  inventory   Auto-discover components and generate the inventory.
+  check       Connectivity / sudo / docker checks against targets (no changes).
+  upgrade     Run check, then ansible-playbook with the generated inventory.
+  all         Guided wizard: setup -> download -> inventory -> check -> upgrade.
+  doctor      Print resolved workspace paths and check environment.
+
+Run './rankez-upgrade <command> --help' where supported for per-command flags.
+USAGE
+}
+
+setup_cmd() {
+    "$SCRIPTS/setup_workspace.sh" "$@"
+}
+
+download_cmd() {
+    "$SCRIPTS/prep_offline_bundle.sh" "$@"
+}
+
+inventory_cmd() {
+    python3 "$SCRIPTS/pre_upgrade_inventory.py" "$@"
+}
+
+check_cmd() {
+    "$SCRIPTS/check_access.sh" "$@"
+}
+
+upgrade_cmd() {
+    local skip_check=0
+    local args=()
+    for a in "$@"; do
+        if [ "$a" = "--skip-check" ]; then
+            skip_check=1
+        else
+            args+=("$a")
+        fi
+    done
+
+    if [ "$skip_check" -eq 0 ]; then
+        # Refuse to run if a check has not passed recently (marker in state.json).
+        CHECK_TTL="${RANKEZ_UPGRADE_CHECK_TTL:-60}"   # minutes
+        LAST_CHECK="$(python3 -c 'import json,sys,os; p=os.path.expanduser(os.environ.get("RANKEZ_UPGRADE_HOME","~/.rankez-upgrade")+"/state.json"); d=json.load(open(p)) if os.path.exists(p) else {}; print(d.get("last_check",""))' 2>/dev/null || true)"
+        if [ -z "$LAST_CHECK" ] || [ $(( $(date +%s) - ${LAST_CHECK%.*} )) -gt $(( CHECK_TTL * 60 )) ]; then
+            echo "==> Running pre-upgrade checks..."
+            check_cmd "${args[@]}" || {
+                echo "Checks failed. Fix the issues above, or re-run with --skip-check." >&2
+                exit 1
+            }
+        else
+            echo "==> Recent check found (within ${CHECK_TTL}m); skipping re-check."
+        fi
+    fi
+
+    local inv="$(rankez_workspace)/inventory/inventory.ini"
+    echo "==> Running upgrade with inventory: $inv"
+    ansible-playbook -i "$inv" "$REPO_ROOT/upgrade.yml" "${args[@]}"
+}
+
+all_cmd() {
+    echo "==> Step 1/5: setup"
+    setup_cmd
+    echo "==> Step 2/5: download"
+    download_cmd
+    echo "==> Step 3/5: inventory"
+    inventory_cmd
+    echo "==> Step 4/5: check"
+    check_cmd || { echo "Check failed. Resolve and re-run ./rankez-upgrade upgrade." >&2; exit 1; }
+    echo "==> Step 5/5: upgrade (confirm when prompted)"
+    upgrade_cmd --skip-check
+}
+
+doctor_cmd() {
+    python3 "$SCRIPTS/rankez_doctor.py" "$@"
+}
+
+CMD="${1:-}"
+shift || true
+case "$CMD" in
+    setup)     setup_cmd "$@" ;;
+    download)  download_cmd "$@" ;;
+    inventory) inventory_cmd "$@" ;;
+    check)     check_cmd "$@" ;;
+    upgrade)   upgrade_cmd "$@" ;;
+    all)       all_cmd "$@" ;;
+    doctor)    doctor_cmd "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) echo "Unknown command: $CMD" >&2; usage; exit 1 ;;
+esac

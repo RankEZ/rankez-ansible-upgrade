@@ -1,0 +1,8 @@
+---
+- name: Pre-upgrade access checks (read-only, no changes to targets)
+  hosts: all
+  become: yes
+  gather_facts: no
+  roles:
+    - role: preflight
+      tags: [check]

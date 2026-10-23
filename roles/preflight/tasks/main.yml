@@ -1,17 +1,30 @@
 ---
+# Read-only checks are tagged `check` so both `check.yml` (pre-upgrade check,
+# no changes) and the full `upgrade.yml` preflight (which also pauses for
+# snapshots) share one source of truth.
+
+- name: Verify passwordless sudo (become)
+  command: whoami
+  become: yes
+  changed_when: false
+  tags: [check]
+
 - name: Check Docker version
   command: docker --version
   register: docker_version_output
   changed_when: false
+  tags: [check]
 
 - name: Parse Docker version
   set_fact:
-    docker_version: "{{ docker_version_output.stdout | regex_search('Docker version ([0-9]+)', '\\1') | first }}"
+    docker_version: "{{ docker_version_output.stdout | regex_search('Docker version ([0-9]+)', '\\\\1') | first }}"
+  tags: [check]
 
 - name: Fail if Docker version is less than 26
   fail:
     msg: "Docker version is {{ docker_version }}, which is less than 26. Please upgrade Docker first."
   when: docker_version | int < 26
+  tags: [check]
 
 - name: Check Docker Buildx availability
   command: docker buildx version
@@ -19,6 +32,7 @@
   changed_when: false
   failed_when: false
   when: inventory_hostname in groups.get('vaults', []) or inventory_hostname in groups.get('frontend', [])
+  tags: [check]
 
 - name: Fail if Docker Buildx is unavailable
   fail:
@@ -26,17 +40,44 @@
   when:
     - inventory_hostname in groups.get('vaults', []) or inventory_hostname in groups.get('frontend', [])
     - docker_buildx_output.rc != 0
+  tags: [check]
 
 - name: Check Docker Compose availability
   command: docker compose version
   register: docker_compose_output
   changed_when: false
   failed_when: false
+  tags: [check]
 
 - name: Fail if Docker Compose is unavailable
   fail:
     msg: "Docker Compose plugin is required by the upgrade automation but 'docker compose version' failed. Install the Docker Compose plugin before continuing."
   when: docker_compose_output.rc != 0
+  tags: [check]
+
+- name: Check install path exists
+  stat:
+    path: "{{ install_path | default('/opt') }}"
+  register: install_path_stat
+  tags: [check]
+
+- name: Fail if install path is missing or has no install
+  fail:
+    msg: "Install path {{ install_path | default('/opt') }} does not exist or is not a directory. Pass --install-path to point at the existing RankEZ install base."
+  when: not install_path_stat.stat.exists or not install_path_stat.stat.isdir
+  tags: [check]
+
+- name: Check disk space in remote_tmp_dir parent
+  shell: "df -Pk $(dirname {{ remote_tmp_dir | default('/tmp/rankez_upgrade') }}) | awk 'NR==2 {print $4}'"
+  register: remote_disk_free
+  changed_when: false
+  tags: [check]
+
+- name: Warn if disk space may be low (need >= 2x package size)
+  fail:
+    msg: "Low disk space on {{ inventory_hostname }}: {{ remote_disk_free.stdout }} KB free. Free space before continuing."
+  when: (remote_disk_free.stdout | int) < 10485760
+  tags: [check]
 
 - name: Check if dr-manager is running
   command: docker ps -q --filter "name=dr-manager"

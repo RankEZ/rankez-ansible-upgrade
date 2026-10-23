@@ -1,102 +1,135 @@
 # RankEZ Automated Upgrade Framework
 
-This directory contains a fully self-contained automation framework to download, provision, and upgrade a RankEZ environment using Ansible. It supports Disaster Recovery (DR) Vaults and distributed or co-located front-end components (PAC, PSM, CPM, CP).
+A self-contained automation framework to download, provision, and upgrade a RankEZ
+environment using Ansible. Supports Disaster Recovery (DR) Vaults and distributed or
+co-located front-end components (PAC, PSM, CPM, CP).
 
 > ⚠️ **Disclaimer: Beta Project**
-> This repository is currently a **Beta** project and has **not been fully tested** across all possible infrastructure combinations. Manual tweaks and configurations may be required to fit your specific environment.
-> 
-> **Currently Tested & Verified Environment:**
-> * **Active-Standby Vault** with one **PAC**, one **PSM**, and one **CPM**.
-> 
-> Use with caution in production environments. Always back up your data and test thoroughly in a staging environment first.
-
-
-## Directory Structure
-- `upgrade.yml`: The main Ansible playbook orchestrating the upgrade.
-- `roles/`: Ansible roles for preflight checks, graceful shutdown, package transfer, and component upgrades.
-- `scripts/prep_offline_bundle.sh`: Downloads the RankEZ tarballs securely using Zendesk authentication.
-- `scripts/pre_upgrade_inventory.py`: Queries the RankEZ API to auto-discover component IPs and generate the `inventory.ini` file.
-
-## Prerequisites
-
-1. **Python Environment**: Ensure you have a Python environment with the required dependencies:
-   ```bash
-   pip install requests python-dotenv ansible
-   ```
-2. **Target Host Tools**: Every upgrade target must have Docker Engine 26 or newer, the Docker Buildx plugin, and the Docker Compose plugin available to the Ansible SSH user (with privilege escalation). Preflight checks these before stopping any services.
-3. **Configuration (.env)**: Create a `.env` file in the `ansible/scripts/` directory with your RankEZ portal credentials (for auto-discovery) and Zendesk credentials (for downloading packages).
-   ```env
-   RANKEZ_URL=https://192.168.0.21
-   RANKEZ_USERNAME=admin
-   RANKEZ_PASSWORD=YourPasswordHere!
-   RANKEZ_VERIFY_SSL=false
-   
-   ZENDESK_EMAIL=your_zendesk_email@example.com
-   ZENDESK_PASSWORD=your_zendesk_password
-   ```
+> This repository is **Beta** and has **not been fully tested** across every
+> infrastructure combination. Manual tweaks may be required for your environment.
+>
+> **Tested & verified:** Active-Standby Vault with one PAC, one PSM, and one CPM.
+>
+> Use with caution in production. Always back up your data and test in staging first.
 
 ---
 
-## Step 1: Download the Offline Bundle
+## Quick Start
 
-Before running Ansible, download the upgrade packages securely using the included script. This will download the massive tarballs locally before Ansible pushes them to the target VMs.
-
-Navigate to the `ansible/` directory and run:
 ```bash
-./scripts/prep_offline_bundle.sh
+git clone <repo> && cd rankez-ansible-upgrade
+pip install -r requirements.txt
+
+./rankez-upgrade all
 ```
-*Follow the prompts to select your OS and version. The packages will be saved to `ansible/scripts/onebox-offline-rhel-v<version>/packages/`.*
+
+`all` runs a guided wizard: `setup` → `download` → `inventory` → `check` → `upgrade`,
+pausing for confirmation before anything is stopped on the targets.
+
+The single entry point (`./rankez-upgrade`) has these subcommands (each also works
+standalone — see *Advanced* below):
+
+| Command      | What it does                                                        |
+|--------------|---------------------------------------------------------------------|
+| `setup`      | Create the workspace and `.env` (hidden password prompt, chmod 600). |
+| `download`   | Download the offline upgrade bundle (picks OS/version interactively). |
+| `inventory`  | Auto-discover components via the RankEZ API and generate inventory.  |
+| `check`      | Connectivity / sudo / docker checks (read-only, no target changes).   |
+| `upgrade`    | Run `check`, then `ansible-playbook` with the generated inventory.    |
+| `all`        | Guided end-to-end wizard.                                            |
+| `doctor`     | Print resolved paths and verify prerequisites.                       |
+
+Run `./rankez-upgrade --help` for usage.
 
 ---
 
-## Step 2: Auto-Discover Components & Generate Inventory
+## Where do files live
 
-Instead of manually crafting the Ansible inventory, use the pre-upgrade Python script to dynamically query the RankEZ API. 
+State is **not** stored in the repo. A fresh clone or `git pull` never forces you to
+move credentials or tarballs around.
 
-From the `ansible/` directory, run:
+```
+~/.rankez-upgrade/                     (RANKEZ_UPGRADE_HOME, default)
+  .env                                 credentials (chmod 600)
+  bundles/<os>-v<ver>/packages/*.tar.gz   downloaded packages (shared across clones)
+  inventory/<name>.ini                 generated inventories
+  logs/ansible.log                     playbook logs
+  state.json                           last-used version, os, ssh user, bundle dir, ...
+```
+
+Override the location with the `RANKEZ_UPGRADE_HOME` environment variable or the
+`--workspace` flag. `.env` resolution order: CLI flag → `./.env` in CWD (legacy, warned)
+→ workspace `.env`.
+
+Run `./rankez-upgrade doctor` to print the resolved paths and verify python deps,
+ansible, docker, and curl.
+
+---
+
+## The upgrade (what happens automatically)
+
+1. **Verify bundle** — assert every required tarball exists locally *before* anything is stopped.
+2. **Plan & confirm** — print the planned order/hosts/versions and ask you to type the
+   target version to continue.
+3. **Preflight** — check docker >=26, buildx, compose, install path, disk space; then
+   pause so you can take **VM snapshots**.
+4. **Graceful shutdown** — stop frontend components (CPM, PSM, PAC), then Vault.
+5. **Transfer packages** — copy only the needed `.tar.gz` files to `/tmp/rankez_upgrade`.
+6. **Upgrade vaults** — primary, then standby (validates DR status).
+7. **Upgrade frontend** — PAC, PSM (async), CPM.
+8. **Upgrade CP** — back up custom configs, upgrade, restore.
+
+---
+
+## Troubleshooting
+
+**Wrong SSH user** — `./rankez-upgrade check` prints which host/user failed and suggests
+likely users (`cloud-user`, `ec2-user`, `root`, `ubuntu`, `opc`, `rocky`). Re-generate the
+inventory with the correct user:
 ```bash
+./rankez-upgrade inventory --ssh-user <user>
+```
+
+**Sudo (become) fails** — re-run the playbook prompted for the become password (`-K`).
+
+**Docker / buildx / compose missing** — `check` reports these per host; install the
+Docker plugins on the target before continuing.
+
+**Missing tarball error** — the playbook asserts package existence up front. Run
+`./rankez-upgrade download --version <ver> --os rhel|ubuntu` to regenerate the bundle,
+or pass `--bundle-dir` to point at the `packages/` folder.
+
+**`check` not recent** — `upgrade` refuses to run unless a check passed in the last 60
+minutes (marker in `state.json`). Re-run `./rankez-upgrade check`, or `--skip-check` to bypass.
+
+**Rollback** — there is no in-tool rollback; restore from the VM snapshots taken during
+preflight.
+
+---
+
+## Advanced (manual steps)
+
+Each subcommand maps to a standalone script:
+
+```bash
+# Download (non-interactive flags available)
+./scripts/prep_offline_bundle.sh --os rhel --version 5.9.0 --with-cp --packages-only
+
+# Generate inventory (auto-discovers vault IPs unless overridden)
 python scripts/pre_upgrade_inventory.py \
-  --primary-vault 192.168.0.11 \
-  --standby-vault 192.168.0.12 \
-  --ssh-user cloud-user \
-  --version 5.9.0
+  --primary-vault 192.168.0.11 --standby-vault 192.168.0.12 \
+  --ssh-user cloud-user --version 5.9.0
+
+# Check (read-only)
+./scripts/check_access.sh <inventory.ini>
+
+# Upgrade
+ansible-playbook -i ~/.rankez-upgrade/inventory/inventory.ini upgrade.yml
 ```
 
-For installations outside `/opt`, pass the existing installation base directory with `--install-path` (the default is `/opt`):
-```bash
-python scripts/pre_upgrade_inventory.py --install-path /data --primary-vault 192.168.0.11 --standby-vault 192.168.0.12 --ssh-user cloud-user --version 5.9.0
-```
-The generated inventory includes `install_path=/data`; Ansible applies it to each component's `INSTALL_PATH` in `install.conf` before running the upgrade, and uses it for component shutdown and CP custom-configuration backup/restore. For a manually maintained inventory, set `install_path` under `[all:vars]`.
+For installations outside `/opt`, pass `--install-path /data`; Ansible applies it to each
+component's `INSTALL_PATH` and uses it for shutdown and CP config backup/restore.
 
-**What this does:**
-1. Logs into the RankEZ API.
-2. Identifies the IP addresses of all active PAC, PSM, CPM, and CP nodes.
-3. Automatically generates the `inventory.ini` file, categorizing every node into the correct Ansible groups and pointing the `local_bundle_dir` to the packages downloaded in Step 1.
-
----
-
-## Step 3: Execute the Upgrade
-
-From the `ansible/` directory, verify the generated inventory:
-```bash
-cat inventory.ini
-```
-
-If it looks correct, execute the master upgrade playbook:
-```bash
-ansible-playbook -i inventory.ini upgrade.yml
-```
-
-### 🛑 IMPORTANT: VM Snapshot Pause
-During the `Preflight` phase, the automation will stop the `dr-manager` service on both vaults. **The playbook will pause.** At this moment, take VM snapshots of all nodes via your Hypervisor, then press **Enter** to resume the upgrade.
-
----
-
-## Playbook Workflow (What Happens Automatically)
-
-1. **Preflight Checks**: Verifies Docker version (>=26), Docker Buildx (`docker buildx version`), and Docker Compose (`docker compose version`) are available on every target before pausing for snapshots. Install the Docker Buildx and Compose plugins on hosts where either check fails; the upgrade is stopped before service shutdown if a prerequisite is missing.
-2. **Graceful Shutdown**: Stops all frontend components (CPM, PSM, PAC) in the safe sequence, followed by stopping the Vault services.
-3. **Package Transfer**: Intelligently copies *only* the required `.tar.gz` packages to `/tmp/rankez_upgrade` on the specific target VMs.
-4. **Vault Upgrades**: Upgrades Primary Vault, then Standby Vault. Validates DR status via `docker exec dr-manager dr-control show-status`.
-5. **Frontend Upgrades**: Sequentially upgrades PAC, PSM, and CPM. (Note: PSM uses `async` to prevent SSH timeouts during heavy Docker image loading).
-6. **Credential Provider (CP) Upgrade**: Backs up custom configs, upgrades CP, and restores configs seamlessly.
+### Resuming a failed run
+`ansible-playbook` supports `--start-at-task="..."`. Snapshot the VMs at the end of
+preflight, so a failed run can be rolled back and resumed from a known-good point.

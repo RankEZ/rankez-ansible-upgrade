@@ -342,6 +342,7 @@ def main():
 ansible_ssh_common_args={ssh_common}
 ansible_become=yes
 upgrade_version={version}
+current_version={installed or 'unknown'}
 local_bundle_dir={local_bundle_dir}
 remote_tmp_dir=/tmp/rankez_upgrade
 install_path={install_path}

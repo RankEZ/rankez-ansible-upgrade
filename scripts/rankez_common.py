@@ -35,6 +35,7 @@ def ensure_workspace() -> Path:
     root = workspace_dir()
     (root / "bundles").mkdir(parents=True, exist_ok=True)
     (root / "inventory").mkdir(parents=True, exist_ok=True)
+    (root / "logs").mkdir(parents=True, exist_ok=True)
     return root
 
 

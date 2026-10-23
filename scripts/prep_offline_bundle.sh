@@ -373,7 +373,7 @@ elif [ "$OS_FAMILY" = "rhel" ]; then
     
     echo " -> Updating Firewalld rules..."
     sudo firewall-cmd --permanent --add-port=443/tcp --add-port=1222/tcp --add-port=3389/tcp --add-port=8443/tcp
-    [ -d "$EXTRACT_HOME/pam-cp-$VERSION" ] && sudo firewall-cmd --permanent --add-port=12893/tcp --add-port=12843/tcp --add-port=8200/tcp --add-port=12863/tcp
+    [ -d "$EXTRACT_HOME/pam-cp-$PAM_VERSION" ] && sudo firewall-cmd --permanent --add-port=12893/tcp --add-port=12843/tcp --add-port=8200/tcp --add-port=12863/tcp
     sudo firewall-cmd --reload
     
     echo " -> Verified Firewalld open ports:"

@@ -29,6 +29,44 @@
       run_once: yes
       loop: "{{ _pkg_check.results }}"
 
+- name: Upgrade plan and confirmation
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Compute host counts
+      set_fact:
+        _total_hosts: "{{ groups['all'] | length }}"
+        _vault_hosts: "{{ groups.get('vaults', []) | length }}"
+        _frontend_hosts: "{{ groups.get('frontend', []) | length }}"
+      delegate_to: localhost
+      run_once: yes
+
+    - name: Print planned upgrade order (dry-run summary)
+      debug:
+        msg: >-
+          PLAN: upgrade {{ _total_hosts }} host(s) from {{ current_version | default('unknown') }}
+          to {{ upgrade_version }}. Order: verify bundle -> preflight (pause for VM snapshot)
+          -> graceful shutdown -> transfer packages -> upgrade vaults ({{ _vault_hosts }}, serial)
+          -> upgrade frontend PAC/PSM/CPM ({{ _frontend_hosts }}) -> upgrade CP.
+      delegate_to: localhost
+      run_once: yes
+
+    - name: Confirm before proceeding
+      pause:
+        prompt: "About to upgrade {{ _total_hosts }} host(s) from {{ current_version | default('unknown') }} to {{ upgrade_version }}. Type the target version ({{ upgrade_version }}) to continue:"
+        echo: yes
+      register: _confirm
+      delegate_to: localhost
+      run_once: yes
+      when: not ansible_check_mode
+
+    - name: Abort if confirmation does not match target version
+      fail:
+        msg: "Aborted: you typed '{{ _confirm.user_input | default('') }}' but the target version is {{ upgrade_version }}."
+      when:
+        - not ansible_check_mode
+        - _confirm.user_input | default('') | trim != upgrade_version
+
 - name: Preflight Checks
   hosts: all
   become: yes

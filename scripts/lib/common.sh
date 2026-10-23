@@ -10,7 +10,7 @@ rankez_workspace() {
 rankez_workspace_ensure() {
     local ws
     ws="$(rankez_workspace)"
-    mkdir -p "$ws/bundles" "$ws/inventory"
+    mkdir -p "$ws/bundles" "$ws/inventory" "$ws/logs"
     echo "$ws"
 }
 

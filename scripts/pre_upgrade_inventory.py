@@ -1,10 +1,42 @@
 import os
+import sys
 import argparse
 import requests
 from dotenv import load_dotenv
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def resolve_bundle_dir(version, os_hint=None, bundle_dir=None):
+    """Return an absolute path to the packages/ folder for `version`.
+
+    Resolution order:
+      1. --bundle-dir flag (explicit path to the packages/ folder), made absolute.
+      2. Search CWD, ./scripts/, and the workspace bundles/ for
+         `onebox-offline-<os>-v<version>/packages`.
+    Returns (path, searched) or (None, searched) when not found.
+    """
+    searched = []
+    if bundle_dir:
+        p = os.path.abspath(bundle_dir)
+        searched.append(p)
+        return (p if os.path.isdir(p) else None), searched
+
+    oss = [os_hint] if os_hint else ["rhel", "ubuntu"]
+    roots = [os.getcwd(), os.path.join(os.getcwd(), "scripts")]
+    workspace = os.environ.get(
+        "RANKEZ_UPGRADE_HOME", os.path.expanduser("~/.rankez-upgrade"))
+    roots.append(os.path.join(workspace, "bundles"))
+
+    candidates = []
+    for root in roots:
+        for os_name in oss:
+            c = os.path.join(root, f"onebox-offline-{os_name}-v{version}", "packages")
+            searched.append(c)
+            if os.path.isdir(c):
+                candidates.append(os.path.abspath(c))
+    return (candidates[0] if len(candidates) == 1 else None), searched
 
 def main():
     parser = argparse.ArgumentParser(description="Auto-discover RankEZ components and generate Ansible inventory for upgrade.")
@@ -13,6 +45,8 @@ def main():
     parser.add_argument("--ssh-user", default="cloud-user", help="SSH user for Ansible")
     parser.add_argument("--output", default="inventory.ini", help="Path to output the inventory file")
     parser.add_argument("--version", default="5.9.0", help="Target RankEZ upgrade version (e.g., 5.9.0)")
+    parser.add_argument("--os", choices=["rhel", "ubuntu"], help="Target OS of the bundle (rhel or ubuntu)")
+    parser.add_argument("--bundle-dir", help="Explicit path to the packages/ folder (contains pam-*.tar.gz)")
     parser.add_argument("--install-path", default="/opt", help="Existing RankEZ installation base path (default: /opt)")
     args = parser.parse_args()
 
@@ -77,11 +111,23 @@ def main():
     extract_ips(components.get("cpmServers", []), "cpm")
     extract_ips(components.get("credentialServers", []), "cp")
     
-    print("\nDiscovered Components:")
+    print(f"\nDiscovered Components:")
     print(f"PAC Nodes: {', '.join(groups['pac']) or 'None'}")
     print(f"PSM Nodes: {', '.join(groups['psm']) or 'None'}")
     print(f"CPM Nodes: {', '.join(groups['cpm']) or 'None'}")
     print(f"CP Nodes:  {', '.join(groups['cp']) or 'None'}")
+
+    local_bundle_dir, searched = resolve_bundle_dir(args.version, os_hint=args.os, bundle_dir=args.bundle_dir)
+    if not local_bundle_dir:
+        print("\nError: could not locate the packages/ folder for the upgrade bundle.", file=sys.stderr)
+        print(f"Searched for onebox-offline-<os>-v{args.version}/packages in:", file=sys.stderr)
+        for s in searched:
+            print(f"  - {s}", file=sys.stderr)
+        print("\nFix: run ./scripts/prep_offline_bundle.sh (or ./rankez-upgrade download) "
+              "to generate the bundle, then pass --bundle-dir <path-to-packages> "
+              "or set --os <rhel|ubuntu>.", file=sys.stderr)
+        exit(1)
+    print(f"\nUsing bundle packages dir: {local_bundle_dir}")
 
     inventory_content = f"""# Automatically generated RankEZ upgrade inventory
 
@@ -115,7 +161,7 @@ standby_vault
 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 ansible_become=yes
 upgrade_version={args.version}
-local_bundle_dir=scripts/onebox-offline-rhel-v{args.version}/packages
+local_bundle_dir={local_bundle_dir}
 remote_tmp_dir=/tmp/rankez_upgrade
 install_path={args.install_path}
 """

@@ -12,6 +12,9 @@ echo ""
 
 # 0.2 Load .env File & Check Credentials
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Work from the repository root so bundle output does not depend on the caller's CWD.
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT" || exit 1
 if [ -f "$SCRIPT_DIR/.env" ]; then
     echo "[+] Loading credentials from $SCRIPT_DIR/.env..."
     set -a
@@ -322,4 +325,10 @@ echo ""
 echo "=================================================================="
 echo " Offline bundle successfully generated!"
 echo " Archive File: $(pwd)/${TAR_NAME}"
+echo " Packages dir : $(pwd)/${BUNDLE_DIR}/packages"
+echo "------------------------------------------------------------------"
+echo " Next step - generate the inventory (note --bundle-dir):"
+echo "   python scripts/pre_upgrade_inventory.py --version ${PAM_VERSION} \\"
+echo "       --os ${TARGET_OS} --bundle-dir \"$(pwd)/${BUNDLE_DIR}/packages\" \\"
+echo "       --primary-vault <ip> --standby-vault <ip> --ssh-user cloud-user"
 echo "=================================================================="

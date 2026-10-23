@@ -5,6 +5,10 @@ import requests
 from dotenv import load_dotenv
 import urllib3
 
+# Allow running the script directly from the repo dir.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rankez_common  # noqa: E402
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
@@ -43,18 +47,28 @@ def main():
     parser.add_argument("--primary-vault", default="192.168.201.131", help="IP address of the primary vault")
     parser.add_argument("--standby-vault", default="192.168.201.132", help="IP address of the standby vault")
     parser.add_argument("--ssh-user", default="cloud-user", help="SSH user for Ansible")
-    parser.add_argument("--output", default="inventory.ini", help="Path to output the inventory file")
+    parser.add_argument("--output", default=None, help="Path to output the inventory file (default: workspace inventory/<name>.ini)")
+    parser.add_argument("--name", default="inventory", help="Inventory name when writing to the workspace (default: inventory)")
     parser.add_argument("--version", default="5.9.0", help="Target RankEZ upgrade version (e.g., 5.9.0)")
     parser.add_argument("--os", choices=["rhel", "ubuntu"], help="Target OS of the bundle (rhel or ubuntu)")
     parser.add_argument("--bundle-dir", help="Explicit path to the packages/ folder (contains pam-*.tar.gz)")
     parser.add_argument("--install-path", default="/opt", help="Existing RankEZ installation base path (default: /opt)")
+    parser.add_argument("--workspace", default=None, help="Workspace dir (default: $RANKEZ_UPGRADE_HOME or ~/.rankez-upgrade)")
+    parser.add_argument("--env", default=None, help="Explicit .env file to load credentials from")
     args = parser.parse_args()
+
+    if args.workspace:
+        os.environ["RANKEZ_UPGRADE_HOME"] = args.workspace
 
     if not args.install_path.startswith("/") or any(char.isspace() for char in args.install_path):
         parser.error("--install-path must be an absolute path without whitespace")
     args.install_path = args.install_path.rstrip("/") or "/"
 
-    load_dotenv()
+    env_file = rankez_common.locate_env(args.env)
+    if env_file:
+        load_dotenv(dotenv_path=str(env_file))
+    else:
+        load_dotenv()
     url = os.environ.get("RANKEZ_URL")
     username = os.environ.get("RANKEZ_USERNAME")
     password = os.environ.get("RANKEZ_PASSWORD")
@@ -166,13 +180,30 @@ remote_tmp_dir=/tmp/rankez_upgrade
 install_path={args.install_path}
 """
 
-    output_dir = os.path.dirname(args.output)
+    if args.output:
+        output_path = args.output
+    else:
+        rankez_common.ensure_workspace()
+        output_path = str(rankez_common.workspace_dir() / "inventory" / f"{args.name}.ini")
+
+    output_dir = os.path.dirname(os.path.abspath(output_path))
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    with open(args.output, "w") as f:
+    with open(output_path, "w") as f:
         f.write(inventory_content)
-    
-    print(f"\nInventory successfully generated at {args.output}")
+
+    # Remember last-used values for the next run.
+    rankez_common.save_state({
+        "ssh_user": args.ssh_user,
+        "version": args.version,
+        "os": args.os,
+        "install_path": args.install_path,
+        "bundle_dir": local_bundle_dir,
+        "inventory": output_path,
+    })
+
+    print(f"\nInventory successfully generated at {output_path}")
+    print(f"Run: ansible-playbook -i {output_path} upgrade.yml")
 
 if __name__ == "__main__":
     main()

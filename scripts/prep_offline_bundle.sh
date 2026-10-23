@@ -15,11 +15,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Work from the repository root so bundle output does not depend on the caller's CWD.
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT" || exit 1
-if [ -f "$SCRIPT_DIR/.env" ]; then
-    echo "[+] Loading credentials from $SCRIPT_DIR/.env..."
-    set -a
-    source "$SCRIPT_DIR/.env"
-    set +a
+
+# Shared path/env resolution (mirrors scripts/rankez_common.py).
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/lib/common.sh"
+
+if ! rankez_load_env; then
+    echo "Note: no .env found (checked workspace, CWD). Zendesk creds must be in env." >&2
 fi
 
 if [ -z "$ZENDESK_EMAIL" ] || [ -z "$ZENDESK_PASSWORD" ]; then

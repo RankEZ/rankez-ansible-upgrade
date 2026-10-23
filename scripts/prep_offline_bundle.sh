@@ -24,6 +24,14 @@ if ! rankez_load_env; then
     echo "Note: no .env found (checked workspace, CWD). Zendesk creds must be in env." >&2
 fi
 
+# Allow --help before credential checks.
+case " $* " in
+    *" -h "*|*" --help "*) 
+        echo "Usage: $0 [--os rhel|ubuntu] [--version X.Y.Z|latest] [--with-cp]"
+        echo "             [--packages-only] [--yes] [--workspace DIR] [--output-dir DIR]"
+        exit 0 ;;
+esac
+
 if [ -z "$ZENDESK_EMAIL" ] || [ -z "$ZENDESK_PASSWORD" ]; then
     echo "Error: Missing Zendesk credentials." >&2
     echo "Please define ZENDESK_EMAIL and ZENDESK_PASSWORD in a .env file or set them as environment variables." >&2
@@ -32,26 +40,56 @@ fi
 
 DOWNLOAD_BASE_URL="https://download.rankez.co/product/pam"
 
-# 1. Select Target OS
-echo "Select Target Operating System:"
-echo "  1) Ubuntu 22.04 / 24.04 / 26.04 (Debian-based)"
-echo "  2) RHEL 9 / Oracle Linux 9 / Rocky 9 (RHEL-based)"
-read -p "Enter choice [1-2]: " OS_CHOICE
+# --- Parse flags -------------------------------------------------------------
+TARGET_OS=""
+PAM_VERSION=""
+INSTALL_CP=false
+PACKAGES_ONLY=false
+YES=false
+WORKSPACE=""
+OUTPUT_DIR=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --os) TARGET_OS="$2"; shift 2 ;;
+        --version) PAM_VERSION="$2"; shift 2 ;;
+        --with-cp) INSTALL_CP=true; shift ;;
+        --packages-only) PACKAGES_ONLY=true; shift ;;
+        --yes|-y) YES=true; shift ;;
+        --latest) PAM_VERSION="latest"; shift ;;
+        --workspace) WORKSPACE="$2"; shift 2 ;;
+        --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: $0 [--os rhel|ubuntu] [--version X.Y.Z|latest] [--with-cp]"
+            echo "             [--packages-only] [--yes] [--workspace DIR] [--output-dir DIR]"
+            exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
 
-case "$OS_CHOICE" in
-    1)
-        TARGET_OS="ubuntu"
-        DOCKER_IMG="ubuntu:26.04"
-        ;;
-    2)
-        TARGET_OS="rhel"
-        DOCKER_IMG="oraclelinux:9"
-        ;;
-    *)
-        echo "Invalid choice. Exiting."
-        exit 1
-        ;;
-esac
+if [ -n "$WORKSPACE" ]; then
+    export RANKEZ_UPGRADE_HOME="$WORKSPACE"
+fi
+WS="$(rankez_workspace_ensure)"
+
+# 1. Select Target OS
+if [ -z "$TARGET_OS" ]; then
+    echo "Select Target Operating System:"
+    echo "  1) Ubuntu 22.04 / 24.04 / 26.04 (Debian-based)"
+    echo "  2) RHEL 9 / Oracle Linux 9 / Rocky 9 (RHEL-based)"
+    read -p "Enter choice [1-2]: " OS_CHOICE
+
+    case "$OS_CHOICE" in
+        1) TARGET_OS="ubuntu"; DOCKER_IMG="ubuntu:26.04" ;;
+        2) TARGET_OS="rhel"; DOCKER_IMG="oraclelinux:9" ;;
+        *) echo "Invalid choice. Exiting."; exit 1 ;;
+    esac
+else
+    case "$TARGET_OS" in
+        ubuntu) DOCKER_IMG="ubuntu:26.04" ;;
+        rhel) DOCKER_IMG="oraclelinux:9" ;;
+        *) echo "Invalid --os value: $TARGET_OS (expected rhel|ubuntu). Exiting." >&2; exit 1 ;;
+    esac
+fi
 
 # 2. Input PAM Version
 CURRENT_YEAR=$(date +%Y)
@@ -59,24 +97,39 @@ CURRENT_MONTH=$((10#$(date +%m)))
 CALC_MAJOR=$((CURRENT_YEAR - 2021))
 DEFAULT_VERSION="${CALC_MAJOR}.${CURRENT_MONTH}.0"
 
-read -p "Enter PAM Version to bundle [$DEFAULT_VERSION]: " USER_VERSION
-PAM_VERSION=${USER_VERSION:-$DEFAULT_VERSION}
+if [ -z "$PAM_VERSION" ]; then
+    read -p "Enter PAM Version to bundle [$DEFAULT_VERSION]: " USER_VERSION
+    PAM_VERSION=${USER_VERSION:-$DEFAULT_VERSION}
+elif [ "$PAM_VERSION" = "latest" ]; then
+    PAM_VERSION="$DEFAULT_VERSION"
+    echo "[+] --latest resolved to $PAM_VERSION"
+fi
 
 # 3. Include Credential Provider (CP)?
-read -p "Include Credential Provider (CP) package? [y/N]: " CP_CONFIRM
-case "$CP_CONFIRM" in
-    [yY][eE][sS]|[yY]) INSTALL_CP=true ;;
-    *) INSTALL_CP=false ;;
-esac
+if [ "$INSTALL_CP" = false ] && [ "$YES" = false ]; then
+    read -p "Include Credential Provider (CP) package? [y/N]: " CP_CONFIRM
+    case "$CP_CONFIRM" in
+        [yY][eE][sS]|[yY]) INSTALL_CP=true ;;
+        *) INSTALL_CP=false ;;
+    esac
+fi
 
-BUNDLE_DIR="onebox-offline-${TARGET_OS}-v${PAM_VERSION}"
+# Bundle output location: workspace bundles/ unless --output-dir given.
+if [ -n "$OUTPUT_DIR" ]; then
+    BUNDLE_ROOT="$OUTPUT_DIR"
+    mkdir -p "$BUNDLE_ROOT"
+else
+    BUNDLE_ROOT="$WS/bundles"
+fi
+BUNDLE_DIR="$BUNDLE_ROOT/onebox-offline-${TARGET_OS}-v${PAM_VERSION}"
 mkdir -p "${BUNDLE_DIR}/packages"
-mkdir -p "${BUNDLE_DIR}/system_deps"
+[ "$PACKAGES_ONLY" = true ] || mkdir -p "${BUNDLE_DIR}/system_deps"
 
 echo ""
 echo "[+] Target OS      : $TARGET_OS"
 echo "[+] PAM Version    : $PAM_VERSION"
 echo "[+] Include CP     : $INSTALL_CP"
+echo "[+] Packages only  : $PACKAGES_ONLY"
 echo "[+] Output Directory: $BUNDLE_DIR"
 echo "------------------------------------------------------------------"
 
@@ -89,18 +142,34 @@ fi
 
 for file in "${PAM_FILES[@]}"; do
     TARGET_FILE="${BUNDLE_DIR}/packages/${file}"
-    if [ -f "$TARGET_FILE" ]; then
-        echo " -> Skipping ${file}, already exists..."
+    if [ -f "$TARGET_FILE" ] && gzip -t "$TARGET_FILE" 2>/dev/null; then
+        echo " -> Skipping ${file}, already exists and is valid..."
     else
+        [ -f "$TARGET_FILE" ] && rm -f "$TARGET_FILE"  # remove corrupt/partial
+        PART_FILE="${TARGET_FILE}.part"
         echo " -> Downloading ${file}..."
-        curl -u "${ZENDESK_EMAIL}:${ZENDESK_PASSWORD}" -sSL -f "${DOWNLOAD_BASE_URL}/${PAM_VERSION}/${file}" -o "$TARGET_FILE" || {
-            echo "Error downloading ${file}. Please check version number or Zendesk credentials."
+        if curl -u "${ZENDESK_EMAIL}:${ZENDESK_PASSWORD}" -sSL -f "${DOWNLOAD_BASE_URL}/${PAM_VERSION}/${file}" -o "$PART_FILE"; then
+            if gzip -t "$PART_FILE" 2>/dev/null; then
+                mv "$PART_FILE" "$TARGET_FILE"
+                echo "    -> verified OK"
+            else
+                rm -f "$PART_FILE"
+                echo "Error: ${file} failed gzip integrity check; removed partial file." >&2
+                exit 1
+            fi
+        else
+            rm -f "$PART_FILE"
+            echo "Error downloading ${file}. Please check version number or Zendesk credentials." >&2
             exit 1
-        }
+        fi
     fi
 done
 
 # 5. Fetch OS System & Docker Dependencies via Temporary Docker Container
+if [ "$PACKAGES_ONLY" = true ]; then
+    echo ""
+    echo "[+] --packages-only: skipping system_deps (Ansible upgrade only needs packages/)."
+else
 echo ""
 echo "[+] Downloading System & Docker packages for ${TARGET_OS} (using Docker container)..."
 
@@ -148,6 +217,7 @@ elif [ "$TARGET_OS" = "rhel" ]; then
         echo "Warning: Docker is not installed. System packages (.rpm) will be skipped."
     fi
 fi
+fi  # end of PACKAGES_ONLY guard
 
 # 6. Embed Offline Installer Script into Bundle
 cat << 'EOF' > "${BUNDLE_DIR}/install_onebox_offline.sh"
@@ -317,20 +387,84 @@ EOF
 
 chmod +x "${BUNDLE_DIR}/install_onebox_offline.sh"
 
-# 7. Create Final Archive
-TAR_NAME="onebox-offline-${TARGET_OS}-v${PAM_VERSION}.tar.gz"
-echo ""
-echo "[+] Creating final tarball: ${TAR_NAME}..."
-tar -czvf "${TAR_NAME}" "${BUNDLE_DIR}"
+# 7. Write manifest + state, and optionally create the final archive
+PACKAGES_ABS="$(cd "${BUNDLE_DIR}/packages" && pwd)"
+BUNDLE_MANIFEST="${BUNDLE_DIR}/MANIFEST.json"
+cat > "$BUNDLE_MANIFEST" <<JSONEOF
+{
+  "version": "${PAM_VERSION}",
+  "os": "${TARGET_OS}",
+  "with_cp": ${INSTALL_CP},
+  "packages_only": ${PACKAGES_ONLY},
+  "bundle_dir": "${BUNDLE_DIR}",
+  "packages_dir": "${PACKAGES_ABS}",
+  "packages": [
+JSONEOF
+for i in "${!PAM_FILES[@]}"; do
+    comma=","
+    [ "$i" -eq $((${#PAM_FILES[@]} - 1)) ] && comma=""
+    echo "    \"${PAM_FILES[$i]}\"${comma}" >> "$BUNDLE_MANIFEST"
+done
+cat >> "$BUNDLE_MANIFEST" <<'JSONEOF'
+  ]
+}
+JSONEOF
+
+# Record last-used download state for the inventory step (via rankez_common).
+if command -v python3 >/dev/null 2>&1; then
+    python3 - "$PAM_VERSION" "$TARGET_OS" "$INSTALL_CP" "$PACKAGES_ABS" "$SCRIPT_DIR" <<'PYEOF'
+import sys, os, json
+version, os_name, with_cp, packages_abs, script_dir = sys.argv[1:6]
+sys.path.insert(0, os.path.abspath(script_dir))
+try:
+    import rankez_common as rc
+    rc.save_state({
+        "version": version,
+        "os": os_name,
+        "with_cp": with_cp.lower() == "true",
+        "bundle_dir": packages_abs,
+        "packages_dir": packages_abs,
+    })
+except Exception as e:
+    # Fallback: write state.json directly.
+    ws = os.environ.get("RANKEZ_UPGRADE_HOME", os.path.expanduser("~/.rankez-upgrade"))
+    os.makedirs(os.path.join(ws, "inventory"), exist_ok=True)
+    os.makedirs(os.path.join(ws, "bundles"), exist_ok=True)
+    state_file = os.path.join(ws, "state.json")
+    state = {}
+    if os.path.exists(state_file):
+        try:
+            with open(state_file) as f:
+                state = json.load(f)
+        except Exception:
+            state = {}
+    state.update({
+        "version": version,
+        "os": os_name,
+        "with_cp": with_cp.lower() == "true",
+        "bundle_dir": packages_abs,
+        "packages_dir": packages_abs,
+    })
+    with open(state_file, "w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
+PYEOF
+fi
+
+if [ "$PACKAGES_ONLY" = true ]; then
+    echo ""
+    echo "[+] --packages-only: skipping final archive. Only packages/ written."
+else
+    TAR_NAME="onebox-offline-${TARGET_OS}-v${PAM_VERSION}.tar.gz"
+    echo ""
+    echo "[+] Creating final tarball: ${TAR_NAME}..."
+    tar -czf "${BUNDLE_ROOT}/${TAR_NAME}" -C "$BUNDLE_ROOT" "onebox-offline-${TARGET_OS}-v${PAM_VERSION}"
+fi
 
 echo ""
 echo "=================================================================="
 echo " Offline bundle successfully generated!"
-echo " Archive File: $(pwd)/${TAR_NAME}"
-echo " Packages dir : $(pwd)/${BUNDLE_DIR}/packages"
+echo " Packages dir : ${PACKAGES_ABS}"
 echo "------------------------------------------------------------------"
-echo " Next step - generate the inventory (note --bundle-dir):"
-echo "   python scripts/pre_upgrade_inventory.py --version ${PAM_VERSION} \\"
-echo "       --os ${TARGET_OS} --bundle-dir \"$(pwd)/${BUNDLE_DIR}/packages\" \\"
-echo "       --primary-vault <ip> --standby-vault <ip> --ssh-user cloud-user"
+echo " Next step - generate the inventory:"
+echo "   ./rankez-upgrade inventory --version ${PAM_VERSION} --os ${TARGET_OS} --bundle-dir \"${PACKAGES_ABS}\""
 echo "=================================================================="

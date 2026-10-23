@@ -141,6 +141,8 @@ def main():
     parser.add_argument("--workspace", default=None,
                         help="Workspace dir (default: $RANKEZ_UPGRADE_HOME or ~/.rankez-upgrade)")
     parser.add_argument("--env", default=None, help="Explicit .env file to load credentials from")
+    parser.add_argument("--insecure-ssh", action="store_true",
+                        help="Disable strict host key checking (default: accept-new)")
     args = parser.parse_args()
 
     if args.workspace:
@@ -302,7 +304,8 @@ def main():
         exit(1)
 
     # Build the SSH connection vars.
-    ssh_common = "'-o StrictHostKeyChecking=accept-new'"
+    ssh_policy = "no" if args.insecure_ssh else "accept-new"
+    ssh_common = f"'-o StrictHostKeyChecking={ssh_policy}'"
     ssh_user_var = f"ansible_user={ssh_user}"
     extra_vars = ""
     if args.ssh_key:

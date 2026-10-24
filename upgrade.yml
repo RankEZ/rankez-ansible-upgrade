@@ -1,4 +1,33 @@
 ---
+- name: Assert upgrade path is supported (single hop)
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Verify can_upgrade(current, target) via the manifest
+      command: >-
+        python3 "{{ playbook_dir }}/scripts/lib/manifest.py"
+        can-upgrade "{{ current_version | default('unknown') }}" "{{ upgrade_version }}"
+      register: _path_check
+      delegate_to: localhost
+      run_once: yes
+      changed_when: false
+      failed_when: false
+      when: current_version | default('unknown') != 'unknown'
+      tags: [always]
+
+    - name: Fail on unsupported direct upgrade path
+      fail:
+        msg: >-
+          Unsupported direct upgrade path {{ current_version | default('unknown') }}
+          -> {{ upgrade_version }}. Run './rankez-upgrade plan' to see the multi-hop
+          route, or re-run with --force to bypass.
+      when:
+        - current_version | default('unknown') != 'unknown'
+        - _path_check.rc | default(0) != 0
+      delegate_to: localhost
+      run_once: yes
+      tags: [always]
+
 - name: Verify local upgrade bundle (packages present on control node)
   hosts: all
   gather_facts: no

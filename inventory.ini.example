@@ -36,6 +36,11 @@ cp
 ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'
 ansible_become=yes
 upgrade_version=5.9.0
+# Per-component versions (from the release manifest). Falls back to
+# upgrade_version when a component is absent. Optional - omit to use
+# upgrade_version for every component.
+component_versions={"vault":"5.9.0","pac":"5.9.0","psm":"5.9.0","cpm":"5.9.0","cp":"5.9.0"}
+current_version=5.8.0
 local_bundle_dir=/absolute/path/to/packages
 remote_tmp_dir=/tmp/rankez_upgrade
 install_path=/opt

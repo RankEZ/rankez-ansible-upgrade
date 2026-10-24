@@ -6,3 +6,11 @@
   roles:
     - role: preflight
       tags: [check]
+
+- name: Detect installed component versions (read-only)
+  hosts: all
+  become: yes
+  gather_facts: no
+  tasks:
+    - import_tasks: roles/preflight/tasks/detect_version.yml
+      tags: [check]

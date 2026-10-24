@@ -11,7 +11,15 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import rankez_common as rc  # noqa: E402
+
+try:
+    import manifest as _manifest  # noqa: E402
+    _MANIFEST = _manifest.load()
+except Exception:
+    _manifest = None
+    _MANIFEST = None
 
 
 def print_paths():
@@ -35,8 +43,56 @@ def print_paths():
         print("\nNo saved state yet (run ./rankez-upgrade setup or download).")
 
 
+def print_manifest():
+    print("\nRelease manifest:")
+    if _manifest is None or _MANIFEST is None:
+        print("  [WARN] release manifest (manifest/releases.json) not found or unparsable.")
+        print("         Version and upgrade-path checks are disabled. Run the maintainer")
+        print("         `python tools/fetch_release_manifest.py` and `git pull` to refresh.")
+        return
+
+    print(f"  Path          : {_manifest.local_manifest_path()}")
+    ga = _manifest.generated_at(_MANIFEST)
+    print(f"  generated_at  : {ga.isoformat() if ga else '(unknown)'}")
+    age = _manifest.age_days(_MANIFEST)
+    if age is not None:
+        stale = "" if age <= _manifest.DEFAULT_STALE_DAYS else \
+            f"  [WARN: older than {_manifest.DEFAULT_STALE_DAYS} days - refresh it]"
+        print(f"  age           : {age} days{stale}")
+    latest = _manifest.latest(_MANIFEST)
+    if latest:
+        print(f"  latest version: {latest}")
+
+
 def _which(cmd):
     return shutil.which(cmd) is not None
+
+
+def print_upgrade_status():
+    """Show detected current version and whether a path to latest exists."""
+    state = rc.load_state()
+    iv = state.get("installed_versions") or {}
+    cur = state.get("current_version")
+
+    print("\nUpgrade status:")
+    if iv:
+        for k, v in sorted(iv.items()):
+            print(f"  {k:12}: {v}")
+        if len({v for v in iv.values() if v}) > 1:
+            print("  [WARN] components are on different versions (half-finished upgrade?)")
+    elif cur:
+        print(f"  current      : {cur}")
+    else:
+        print("  current      : (unknown - run ./rankez-upgrade check for detection)")
+
+    if _manifest is not None and cur:
+        latest = _manifest.latest(_MANIFEST)
+        if latest and cur != latest:
+            if _manifest.can_upgrade(_MANIFEST, cur, latest):
+                print(f"  to latest    : direct -> {latest}")
+            else:
+                steps = _manifest.suggest_upgrade_steps(_MANIFEST, cur, latest)
+                print(f"  to latest    : {' -> '.join(steps) if steps else '(no path)'}")
 
 
 def check_python_deps():
@@ -84,6 +140,8 @@ def check_environment():
 
 def main():
     print_paths()
+    print_manifest()
+    print_upgrade_status()
     ok = check_environment()
     sys.exit(0 if ok else 1)
 

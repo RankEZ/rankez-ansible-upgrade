@@ -20,6 +20,10 @@ cd "$REPO_ROOT" || exit 1
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/lib/common.sh"
 
+# Release manifest query helper (see scripts/lib/manifest.py). Falls back to the
+# legacy date-based guess when the manifest is absent or the lookup fails.
+MANIFEST_PY="$SCRIPT_DIR/lib/manifest.py"
+
 if ! rankez_load_env; then
     echo "Note: no .env found (checked workspace, CWD). Zendesk creds must be in env." >&2
 fi
@@ -91,17 +95,19 @@ else
     esac
 fi
 
-# 2. Input PAM Version
+# 2. Input PAM Version (resolved against the release manifest)
 CURRENT_YEAR=$(date +%Y)
 CURRENT_MONTH=$((10#$(date +%m)))
 CALC_MAJOR=$((CURRENT_YEAR - 2021))
-DEFAULT_VERSION="${CALC_MAJOR}.${CURRENT_MONTH}.0"
+FALLBACK_VERSION="${CALC_MAJOR}.${CURRENT_MONTH}.0"
+MANIFEST_LATEST="$(python3 "$MANIFEST_PY" latest 2>/dev/null || true)"
 
 if [ -z "$PAM_VERSION" ]; then
+    DEFAULT_VERSION="${MANIFEST_LATEST:-$FALLBACK_VERSION}"
     read -p "Enter PAM Version to bundle [$DEFAULT_VERSION]: " USER_VERSION
     PAM_VERSION=${USER_VERSION:-$DEFAULT_VERSION}
 elif [ "$PAM_VERSION" = "latest" ]; then
-    PAM_VERSION="$DEFAULT_VERSION"
+    PAM_VERSION="${MANIFEST_LATEST:-$FALLBACK_VERSION}"
     echo "[+] --latest resolved to $PAM_VERSION"
 fi
 
@@ -135,9 +141,21 @@ echo "------------------------------------------------------------------"
 
 # 4. Download PAM Application Packages
 echo "[+] Downloading PAM Application Tarballs..."
-PAM_FILES=("pam-vault-${PAM_VERSION}.tar.gz" "pam-pac-${PAM_VERSION}.tar.gz" "pam-psm-${PAM_VERSION}.tar.gz" "pam-cpm-${PAM_VERSION}.tar.gz")
+# Per-component versions come from the manifest; a component may differ from the
+# release version (e.g. core 5.10.0 but a bundled utility 5.9.0). Fall back to
+# the release version when the manifest has no entry for that component.
+comp_ver() {
+    python3 "$MANIFEST_PY" tarball-version "$PAM_VERSION" "$1" "$PAM_VERSION" 2>/dev/null || echo "$PAM_VERSION"
+}
+VAULT_VERSION="$(comp_ver vault)"
+PAC_VERSION="$(comp_ver pac)"
+PSM_VERSION="$(comp_ver psm)"
+CPM_VERSION="$(comp_ver cpm)"
+CP_VERSION="$(comp_ver cp)"
+
+PAM_FILES=("pam-vault-${VAULT_VERSION}.tar.gz" "pam-pac-${PAC_VERSION}.tar.gz" "pam-psm-${PSM_VERSION}.tar.gz" "pam-cpm-${CPM_VERSION}.tar.gz")
 if [ "$INSTALL_CP" = "true" ]; then
-    PAM_FILES+=("pam-cp-${PAM_VERSION}.tar.gz")
+    PAM_FILES+=("pam-cp-${CP_VERSION}.tar.gz")
 fi
 
 for file in "${PAM_FILES[@]}"; do
@@ -389,6 +407,12 @@ chmod +x "${BUNDLE_DIR}/install_onebox_offline.sh"
 
 # 7. Write manifest + state, and optionally create the final archive
 PACKAGES_ABS="$(cd "${BUNDLE_DIR}/packages" && pwd)"
+# Component -> version map recorded so the inventory step knows each tarball's
+# own version (components can diverge from the release version).
+COMPONENT_VERSIONS="{\"vault\":\"${VAULT_VERSION}\",\"pac\":\"${PAC_VERSION}\",\"psm\":\"${PSM_VERSION}\",\"cpm\":\"${CPM_VERSION}\""
+[ "$INSTALL_CP" = "true" ] && COMPONENT_VERSIONS="${COMPONENT_VERSIONS},\"cp\":\"${CP_VERSION}\""
+COMPONENT_VERSIONS="${COMPONENT_VERSIONS}}"
+
 BUNDLE_MANIFEST="${BUNDLE_DIR}/MANIFEST.json"
 cat > "$BUNDLE_MANIFEST" <<JSONEOF
 {
@@ -398,6 +422,7 @@ cat > "$BUNDLE_MANIFEST" <<JSONEOF
   "packages_only": ${PACKAGES_ONLY},
   "bundle_dir": "${BUNDLE_DIR}",
   "packages_dir": "${PACKAGES_ABS}",
+  "component_versions": ${COMPONENT_VERSIONS},
   "packages": [
 JSONEOF
 for i in "${!PAM_FILES[@]}"; do
@@ -412,9 +437,13 @@ JSONEOF
 
 # Record last-used download state for the inventory step (via rankez_common).
 if command -v python3 >/dev/null 2>&1; then
-    python3 - "$PAM_VERSION" "$TARGET_OS" "$INSTALL_CP" "$PACKAGES_ABS" "$SCRIPT_DIR" <<'PYEOF'
+    python3 - "$PAM_VERSION" "$TARGET_OS" "$INSTALL_CP" "$PACKAGES_ABS" "$SCRIPT_DIR" "$VAULT_VERSION" "$PAC_VERSION" "$PSM_VERSION" "$CPM_VERSION" "$CP_VERSION" <<'PYEOF'
 import sys, os, json
 version, os_name, with_cp, packages_abs, script_dir = sys.argv[1:6]
+v_vault, v_pac, v_psm, v_cpm, v_cp = sys.argv[6:11]
+component_versions = {"vault": v_vault, "pac": v_pac, "psm": v_psm, "cpm": v_cpm}
+if with_cp.lower() == "true":
+    component_versions["cp"] = v_cp
 sys.path.insert(0, os.path.abspath(script_dir))
 try:
     import rankez_common as rc
@@ -424,6 +453,7 @@ try:
         "with_cp": with_cp.lower() == "true",
         "bundle_dir": packages_abs,
         "packages_dir": packages_abs,
+        "component_versions": component_versions,
     })
 except Exception as e:
     # Fallback: write state.json directly.
@@ -444,6 +474,7 @@ except Exception as e:
         "with_cp": with_cp.lower() == "true",
         "bundle_dir": packages_abs,
         "packages_dir": packages_abs,
+        "component_versions": component_versions,
     })
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2, sort_keys=True)

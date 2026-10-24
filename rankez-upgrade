@@ -5,7 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# rankez-upgrade lives at the repository root, so SCRIPT_DIR *is* the repo root.
+REPO_ROOT="$SCRIPT_DIR"
 SCRIPTS="$SCRIPT_DIR/scripts"
 
 # shellcheck source=/dev/null
@@ -17,13 +18,16 @@ Usage: ./rankez-upgrade <command> [options]
 
 Commands:
   setup       Create the workspace and .env (hidden password prompt), chmod 600.
-  download    Download the offline bundle (prep_offline_bundle.sh).
+  download    Download the offline bundle(s). `--plan` fetches every hop.
   inventory   Auto-discover components and generate the inventory.
-  check       Connectivity / sudo / docker checks against targets (no changes).
-  upgrade     Run check, then ansible-playbook with the generated inventory.
+  plan        Compute the upgrade plan (direct / multi-hop / inferred) from the manifest.
+  check       Connectivity / sudo / docker / version-detection checks (no changes).
+  upgrade     Run one hop; `--auto-hops` runs a full multi-hop chain.
   all         Guided wizard: setup -> download -> inventory -> check -> upgrade.
   doctor      Print resolved workspace paths and check environment.
 
+Upgrade flags: --current-version X --target X --auto-hops --allow-inferred
+               --force --skip-check
 Run './rankez-upgrade <command> --help' where supported for per-command flags.
 USAGE
 }
@@ -33,35 +37,133 @@ setup_cmd() {
 }
 
 download_cmd() {
-    "$SCRIPTS/prep_offline_bundle.sh" "$@"
+    local plan=0
+    local args=()
+    for a in "$@"; do
+        if [ "$a" = "--plan" ]; then
+            plan=1
+        else
+            args+=("$a")
+        fi
+    done
+
+    if [ "$plan" -eq 1 ]; then
+        # Fetch every hop's bundle (offline-friendly, before any downtime).
+        local os="${RANKEZ_UPGRADE_OS:-rhel}"
+        local targets
+        targets="$(python3 - "$SCRIPTS" <<'PYEOF'
+import json, os, sys
+sys.path.insert(0, os.path.join(sys.argv[1], "lib"))
+import rankez_common as rc
+plan = rc.load_state().get("plan") or {}
+print(" ".join(h["to"] for h in plan.get("hops", [])))
+PYEOF
+)"
+        if [ -z "$targets" ]; then
+            echo "No plan found. Run './rankez-upgrade plan' first." >&2
+            exit 1
+        fi
+        for v in $targets; do
+            echo "==> Downloading bundle for hop target $v"
+            "$SCRIPTS/prep_offline_bundle.sh" --version "$v" --os "$os" \
+                --packages-only --yes "${args[@]+"${args[@]}"}" || exit 1
+        done
+        return
+    fi
+
+    "$SCRIPTS/prep_offline_bundle.sh" "${args[@]+"${args[@]}"}"
 }
 
 inventory_cmd() {
     python3 "$SCRIPTS/pre_upgrade_inventory.py" "$@"
 }
 
+plan_cmd() {
+    python3 "$SCRIPTS/plan_upgrade.py" "$@"
+}
+
 check_cmd() {
     "$SCRIPTS/check_access.sh" "$@"
 }
 
+# Read one key from state.json (empty string when absent).
+_state_get() {
+    python3 - "$1" <<'PYEOF'
+import json, os, sys
+p = os.path.expanduser(os.environ.get("RANKEZ_UPGRADE_HOME", "~/.rankez-upgrade") + "/state.json")
+d = json.load(open(p)) if os.path.exists(p) else {}
+v = d.get(sys.argv[1])
+print("" if v is None else v)
+PYEOF
+}
+
 upgrade_cmd() {
-    local skip_check=0
-    local args=()
-    for a in "$@"; do
-        if [ "$a" = "--skip-check" ]; then
-            skip_check=1
-        else
-            args+=("$a")
-        fi
+    local skip_check=0 force=0 auto_hops=0 allow_inferred=0
+    local args=() cur="" target=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --skip-check) skip_check=1 ;;
+            --force) force=1 ;;
+            --auto-hops|--resume) auto_hops=1 ;;
+            --allow-inferred) allow_inferred=1 ;;
+            --current-version|--current) cur="$2"; shift ;;
+            --target) target="$2"; shift ;;
+            *) args+=("$1") ;;
+        esac
+        shift
     done
 
+    # Resolve the installed (current) version.
+    if [ -z "$cur" ]; then
+        cur="$(_state_get current_version)"
+    fi
+    if [ -z "$cur" ] || [ "$cur" = "None" ]; then
+        echo "Error: installed version unknown. Run './rankez-upgrade check'" >&2
+        echo "       (detection) or pass --current-version X.Y.Z." >&2
+        exit 2
+    fi
+
+    # Compute the plan (also written to state.json for download --plan / auto-hops).
+    local plan_args=(--current "$cur")
+    [ -n "$target" ] && plan_args+=(--target "$target")
+    local plan_json mode inferred
+    plan_json="$(python3 "$SCRIPTS/plan_upgrade.py" "${plan_args[@]}" --json 2>&1)" || {
+        echo "No valid upgrade plan ($cur -> ${target:-latest}):" >&2
+        echo "$plan_json" >&2
+        exit 1
+    }
+    mode="$(echo "$plan_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mode",""))')"
+    inferred="$(echo "$plan_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("inferred_hops",0))')"
+
+    # Auto-hops: drive the full chain, one playbook run per hop.
+    if [ "$auto_hops" -eq 1 ]; then
+        if [ "$inferred" -gt 0 ] && [ "$allow_inferred" -eq 0 ]; then
+            echo "Plan contains inferred (non-documented) hops." >&2
+            echo "Re-run with --allow-inferred to auto-run them." >&2
+            exit 3
+        fi
+        python3 "$SCRIPTS/run_hops.py" --allow-inferred \
+            --inventory "$(rankez_workspace)/inventory/inventory.ini"
+        exit $?
+    fi
+
+    # Non-direct path without --auto-hops/--force -> advise and stop.
+    if [ "$mode" != "direct" ] && [ "$force" -eq 0 ]; then
+        python3 "$SCRIPTS/plan_upgrade.py" "${plan_args[@]}" >&2
+        echo "" >&2
+        echo "Installed $cur cannot go directly to ${target:-latest}." >&2
+        echo "Run: ./rankez-upgrade download --plan && ./rankez-upgrade upgrade --auto-hops" >&2
+        echo "  (or re-run with --force to bypass this safety check)." >&2
+        exit 3
+    fi
+
+    # Single hop (direct, or forced): check then run.
     if [ "$skip_check" -eq 0 ]; then
-        # Refuse to run if a check has not passed recently (marker in state.json).
         CHECK_TTL="${RANKEZ_UPGRADE_CHECK_TTL:-60}"   # minutes
-        LAST_CHECK="$(python3 -c 'import json,sys,os; p=os.path.expanduser(os.environ.get("RANKEZ_UPGRADE_HOME","~/.rankez-upgrade")+"/state.json"); d=json.load(open(p)) if os.path.exists(p) else {}; print(d.get("last_check",""))' 2>/dev/null || true)"
+        LAST_CHECK="$(_state_get last_check)"
         if [ -z "$LAST_CHECK" ] || [ $(( $(date +%s) - ${LAST_CHECK%.*} )) -gt $(( CHECK_TTL * 60 )) ]; then
             echo "==> Running pre-upgrade checks..."
-            check_cmd "${args[@]}" || {
+            check_cmd "${args[@]+"${args[@]}"}" || {
                 echo "Checks failed. Fix the issues above, or re-run with --skip-check." >&2
                 exit 1
             }
@@ -72,7 +174,11 @@ upgrade_cmd() {
 
     local inv="$(rankez_workspace)/inventory/inventory.ini"
     echo "==> Running upgrade with inventory: $inv"
-    ansible-playbook -i "$inv" "$REPO_ROOT/upgrade.yml" "${args[@]}"
+    local extra=()
+    extra+=(-e "current_version=${cur}")
+    [ -n "$target" ] && extra+=(-e "upgrade_version=${target}")
+    ansible-playbook -i "$inv" "$REPO_ROOT/upgrade.yml" \
+        "${extra[@]+"${extra[@]}"}" "${args[@]+"${args[@]}"}"
 }
 
 all_cmd() {
@@ -98,6 +204,7 @@ case "$CMD" in
     setup)     setup_cmd "$@" ;;
     download)  download_cmd "$@" ;;
     inventory) inventory_cmd "$@" ;;
+    plan)      plan_cmd "$@" ;;
     check)     check_cmd "$@" ;;
     upgrade)   upgrade_cmd "$@" ;;
     all)       all_cmd "$@" ;;

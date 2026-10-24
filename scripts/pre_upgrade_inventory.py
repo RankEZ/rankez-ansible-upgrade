@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import json
 import argparse
 import requests
 from dotenv import load_dotenv
@@ -8,7 +9,18 @@ import urllib3
 
 # Allow running the script directly from the repo dir.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import rankez_common  # noqa: E402
+
+# The committed release manifest (scripts/lib/manifest.py). Optional: when the
+# manifest is absent/unparsable we fall back to release-version == component
+# version and skip the upgrade-path safety check.
+try:
+    import manifest as _manifest  # noqa: E402
+    _MANIFEST = _manifest.load()
+except Exception:
+    _manifest = None  # type: ignore[assignment]
+    _MANIFEST = {}
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -53,6 +65,12 @@ def parse_version(v):
     if not m:
         return (0, 0, 0)
     return tuple(int(x) for x in m.groups() if x is not None)
+
+
+def clean_version(v):
+    """Return 'x.y.z' from a possibly noisy version string, else the input."""
+    m = re.search(r"(\d+\.\d+\.\d+)", v or "")
+    return m.group(1) if m else (v or "")
 
 
 def find_vault_ips(components):
@@ -134,6 +152,8 @@ def main():
                         help="Inventory name when writing to the workspace (default: inventory)")
     parser.add_argument("--version", default=None,
                         help="Target RankEZ upgrade version (default: state.json, else newest bundle)")
+    parser.add_argument("--current-version", "--current", dest="current_version", default=None,
+                        help="Installed version override (when the API does not expose it)")
     parser.add_argument("--os", choices=["rhel", "ubuntu"], help="Target OS of the bundle (rhel or ubuntu)")
     parser.add_argument("--bundle-dir", help="Explicit path to the packages/ folder (contains pam-*.tar.gz)")
     parser.add_argument("--install-path", default=None,
@@ -171,6 +191,15 @@ def main():
             print("Error: no target version given and none recorded. "
                   "Run ./rankez-upgrade download first, or pass --version.", file=sys.stderr)
             exit(1)
+
+    # Per-component versions for the target release. Precedence: state.json
+    # (matches what download actually wrote) -> manifest -> release version.
+    component_versions = dict(state.get("component_versions") or {})
+    for _comp in ("vault", "pac", "psm", "cpm", "cp"):
+        cv = None
+        if _MANIFEST:
+            cv = _manifest.tarball_version(_MANIFEST, version, _comp, None)
+        component_versions.setdefault(_comp, cv or version)
 
     env_file = rankez_common.locate_env(args.env)
     if env_file:
@@ -251,7 +280,7 @@ def main():
     print(f"\nVaults: primary={primary_vault}, standby={standby_vault or '(none)'}")
 
     # Version sanity: warn on downgrade / same / major skip.
-    installed = discover_installed_version(components)
+    installed = args.current_version or discover_installed_version(components)
     if installed:
         cur = parse_version(installed)
         tgt = parse_version(version)
@@ -261,6 +290,23 @@ def main():
             print(f"WARNING: target {version} equals installed {installed} (no-op upgrade).")
         elif tgt[0] - cur[0] > 1:
             print(f"WARNING: skipping major version(s) {installed} -> {version}.")
+
+    # Upgrade-path check against the manifest. `upgrade` blocks on an unsupported
+    # direct path (--force overrides). Here we only warn and record the result.
+    upgrade_path_supported = True
+    upgrade_path_via = None
+    if installed and _MANIFEST:
+        src = clean_version(installed)
+        dst = clean_version(version)
+        if not _manifest.can_upgrade(_MANIFEST, src, dst):
+            upgrade_path_supported = False
+            via = _manifest.suggest_upgrade_steps(_MANIFEST, src, dst)
+            if via and len(via) >= 2:
+                upgrade_path_via = via
+            print(f"WARNING: {src} -> {dst} is not a supported direct upgrade path.")
+            if upgrade_path_via:
+                print(f"         Suggested steps: {' -> '.join(upgrade_path_via)} "
+                      f"(multi-hop; intermediate hops may be inferred)")
 
     # Resolve bundle dir; then verify required tarballs against discovered groups.
     local_bundle_dir, searched = resolve_bundle_dir(version, os_hint=args.os, bundle_dir=args.bundle_dir)
@@ -291,7 +337,8 @@ def main():
 
     missing = []
     for name in required:
-        p = os.path.join(local_bundle_dir, f"pam-{name}-{version}.tar.gz")
+        cv = component_versions.get(name, version)
+        p = os.path.join(local_bundle_dir, f"pam-{name}-{cv}.tar.gz")
         if not os.path.isfile(p):
             missing.append(p)
     if missing:
@@ -343,6 +390,7 @@ ansible_ssh_common_args={ssh_common}
 ansible_become=yes
 upgrade_version={version}
 current_version={installed or 'unknown'}
+component_versions={json.dumps(component_versions, separators=(',', ':'))}
 local_bundle_dir={local_bundle_dir}
 remote_tmp_dir=/tmp/rankez_upgrade
 install_path={install_path}
@@ -367,6 +415,10 @@ install_path={install_path}
         "install_path": install_path,
         "bundle_dir": local_bundle_dir,
         "inventory": output_path,
+        "component_versions": component_versions,
+        "current_version": clean_version(installed) if installed else None,
+        "upgrade_path_supported": upgrade_path_supported,
+        "upgrade_path_via": upgrade_path_via,
     })
 
     print(f"\nInventory successfully generated at {output_path}")

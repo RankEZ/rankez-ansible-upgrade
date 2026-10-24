@@ -1,14 +1,14 @@
 ---
 - name: Extract CP package
   unarchive:
-    src: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}.tar.gz"
+    src: "{{ remote_tmp_dir }}/pam-cp-{{ component_versions.cp | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}"
     remote_src: yes
   when: inventory_hostname in groups.get('cp', [])
 
 - name: Set CP installation path in install.conf
   lineinfile:
-    path: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}/install.conf"
+    path: "{{ remote_tmp_dir }}/pam-cp-{{ component_versions.cp | default(upgrade_version) }}/install.conf"
     regexp: '^INSTALL_PATH='
     line: "INSTALL_PATH={{ install_path | default('/opt') }}"
     backup: yes
@@ -32,7 +32,7 @@
 - name: Run CP upgrade script
   command: bash upgrade.sh
   args:
-    chdir: "{{ remote_tmp_dir }}/pam-cp-{{ upgrade_version }}"
+    chdir: "{{ remote_tmp_dir }}/pam-cp-{{ component_versions.cp | default(upgrade_version) }}"
   when: inventory_hostname in groups.get('cp', [])
 
 - name: Restore CP custom configuration

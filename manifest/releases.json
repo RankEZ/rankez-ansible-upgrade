@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-24T02:49:00Z",
+  "releases": {
+    "5.10.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.10.0",
+        "pac": "5.10.0",
+        "psm": "5.10.0",
+        "vault": "5.10.0"
+      },
+      "extra": {
+        "remoteapp": "5.9.0",
+        "utility": "5.9.0"
+      },
+      "upgrade_from": [
+        "5.9.0",
+        "5.8.0",
+        "5.7.0",
+        "5.6.0"
+      ]
+    },
+    "5.9.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.9.0",
+        "pac": "5.9.0",
+        "psm": "5.9.0",
+        "vault": "5.9.0"
+      },
+      "extra": {
+        "remoteapp": "5.9.0",
+        "utility": "5.9.0"
+      },
+      "upgrade_from": [
+        "5.8.0",
+        "5.7.0",
+        "5.6.0"
+      ]
+    },
+    "5.8.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.8.0",
+        "pac": "5.8.0",
+        "psm": "5.8.0",
+        "vault": "5.8.0"
+      },
+      "extra": {
+        "remoteapp": "5.7.0"
+      },
+      "upgrade_from": [
+        "5.7.0",
+        "5.6.0"
+      ]
+    },
+    "5.7.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.7.0",
+        "pac": "5.7.0",
+        "psm": "5.7.0",
+        "vault": "5.7.0"
+      },
+      "extra": {
+        "remoteapp": "5.7.0",
+        "utility": "5.6.0"
+      },
+      "upgrade_from": [
+        "5.6.0"
+      ]
+    },
+    "5.6.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.6.0",
+        "pac": "5.6.0",
+        "psm": "5.6.0",
+        "vault": "5.6.0"
+      },
+      "extra": {
+        "remoteapp": "5.5.0",
+        "utility": "5.6.0"
+      },
+      "upgrade_from": [
+        "5.5.0",
+        "5.4.0",
+        "5.3.0",
+        "5.2.0",
+        "5.1.0",
+        "4.12.0"
+      ]
+    },
+    "5.5.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.5.0",
+        "pac": "5.5.0",
+        "psm": "5.5.0",
+        "vault": "5.5.0"
+      },
+      "extra": {
+        "remoteapp": "5.5.0",
+        "utility": "5.5.0"
+      },
+      "upgrade_from": [
+        "5.4.0",
+        "5.3.0",
+        "5.2.0",
+        "5.1.0",
+        "4.12.0"
+      ]
+    },
+    "5.4.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.4.0",
+        "pac": "5.4.0",
+        "psm": "5.4.0",
+        "vault": "5.4.0"
+      },
+      "extra": {
+        "remoteapp": "5.4.0",
+        "utility": "5.4.0"
+      },
+      "upgrade_from": [
+        "5.3.0",
+        "5.2.0",
+        "5.1.0",
+        "4.12.0"
+      ]
+    },
+    "5.3.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.3.0",
+        "pac": "5.3.0",
+        "psm": "5.3.0",
+        "vault": "5.3.0"
+      },
+      "extra": {
+        "remoteapp": "5.3.0",
+        "utility": "4.12.0"
+      },
+      "upgrade_from": [
+        "5.2.0",
+        "5.1.0",
+        "4.12.0"
+      ]
+    },
+    "5.2.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.2.0",
+        "pac": "5.2.0",
+        "psm": "5.2.0",
+        "vault": "5.2.0"
+      },
+      "extra": {
+        "remoteapp": "5.2.0",
+        "utility": "4.12.0"
+      },
+      "upgrade_from": []
+    },
+    "5.1.0": {
+      "major": "5",
+      "components": {
+        "cpm": "5.1.0",
+        "pac": "5.1.0",
+        "psm": "5.1.0",
+        "vault": "5.1.0"
+      },
+      "extra": {
+        "remoteapp": "5.1.0",
+        "utility": "4.12.0"
+      },
+      "upgrade_from": []
+    },
+    "4.12.0": {
+      "major": "4",
+      "components": {
+        "cpm": "4.12.0",
+        "pac": "4.12.0",
+        "psm": "4.12.0",
+        "vault": "4.12.0"
+      },
+      "extra": {
+        "remoteapp": "4.11.0",
+        "utility": "4.12.0"
+      },
+      "upgrade_from": []
+    },
+    "4.11.0": {
+      "major": "4",
+      "components": {
+        "cpm": "4.11.0",
+        "pac": "4.11.0",
+        "psm": "4.11.0",
+        "vault": "4.11.0"
+      },
+      "extra": {
+        "remoteapp": "4.11.0",
+        "utility": "4.11.0"
+      },
+      "upgrade_from": []
+    },
+    "4.10.0": {
+      "major": "4",
+      "components": {
+        "cpm": "4.10.0",
+        "pac": "4.10.0",
+        "psm": "4.10.0",
+        "vault": "4.10.0"
+      },
+      "extra": {
+        "remoteapp": "4.10.0",
+        "utility": "4.10.0"
+      },
+      "upgrade_from": []
+    },
+    "4.9.0": {
+      "major": "4",
+      "components": {
+        "cpm": "4.9.0",
+        "pac": "4.9.0",
+        "psm": "4.9.0",
+        "vault": "4.9.0"
+      },
+      "extra": {
+        "remoteapp": "4.9.0",
+        "utility": "4.9.0"
+      },
+      "upgrade_from": []
+    },
+    "4.8.0": {
+      "major": "4",
+      "components": {
+        "cpm": "4.8.0",
+        "pac": "4.8.0",
+        "psm": "4.8.0",
+        "vault": "4.8.0"
+      },
+      "extra": {
+        "remoteapp": "4.8.0",
+        "utility": "4.8.0"
+      },
+      "upgrade_from": []
+    },
+    "4.7.0": {
+      "major": "4",
+      "components": {},
+      "upgrade_from": []
+    },
+    "4.6.0": {
+      "major": "4",
+      "components": {},
+      "upgrade_from": []
+    }
+  },
+  "latest_by_major": {
+    "4": "4.12.0",
+    "5": "5.10.0"
+  }
+}

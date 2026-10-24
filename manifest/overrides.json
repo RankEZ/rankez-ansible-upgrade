@@ -1,0 +1,3 @@
+{
+  "_comment": "Hand-edited overrides, applied on top of every scrape. Add a release object here to make it survive the next tools/fetch_release_manifest.py run (it is marked 'manual'). Example: \"5.10.0\": { \"components\": { \"vault\": \"5.10.0\" }, \"upgrade_from\": [\"5.6.0\",\"5.7.0\",\"5.8.0\",\"5.9.0\"] }"
+}

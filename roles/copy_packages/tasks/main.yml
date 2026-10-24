@@ -5,32 +5,35 @@
     state: directory
     mode: '0755'
 
+# Per-component versions (from the release manifest, via `component_versions` in
+# the inventory) fall back to the release `upgrade_version` when a component has
+# no distinct entry.
 - name: Copy Vault package
   copy:
-    src: "{{ local_bundle_dir | realpath }}/pam-vault-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-vault-{{ component_versions.vault | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups['vaults']
 
 - name: Copy PAC package
   copy:
-    src: "{{ local_bundle_dir | realpath }}/pam-pac-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-pac-{{ component_versions.pac | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('pac', [])
 
 - name: Copy PSM package
   copy:
-    src: "{{ local_bundle_dir | realpath }}/pam-psm-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-psm-{{ component_versions.psm | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('psm', [])
 
 - name: Copy CPM package
   copy:
-    src: "{{ local_bundle_dir | realpath }}/pam-cpm-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-cpm-{{ component_versions.cpm | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('cpm', [])
 
 - name: Copy CP package
   copy:
-    src: "{{ local_bundle_dir | realpath }}/pam-cp-{{ upgrade_version }}.tar.gz"
+    src: "{{ local_bundle_dir | realpath }}/pam-cp-{{ component_versions.cp | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}/"
   when: inventory_hostname in groups.get('cp', [])

@@ -32,5 +32,6 @@ onebox-offline-*
 state.json
 bundles/
 
-# Internal planning (do not commit)
-PLAN.md
+# Internal planning and tools (do not commit)
+PLAN*.md
+tools/

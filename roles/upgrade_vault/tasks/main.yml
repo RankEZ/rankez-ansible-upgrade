@@ -1,13 +1,13 @@
 ---
 - name: Extract Vault package
   unarchive:
-    src: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}.tar.gz"
+    src: "{{ remote_tmp_dir }}/pam-vault-{{ component_versions.vault | default(upgrade_version) }}.tar.gz"
     dest: "{{ remote_tmp_dir }}"
     remote_src: yes
 
 - name: Set Vault installation path in install.conf
   lineinfile:
-    path: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}/install.conf"
+    path: "{{ remote_tmp_dir }}/pam-vault-{{ component_versions.vault | default(upgrade_version) }}/install.conf"
     regexp: '^INSTALL_PATH='
     line: "INSTALL_PATH={{ install_path | default('/opt') }}"
     backup: yes
@@ -15,7 +15,7 @@
 - name: Run Vault upgrade script
   command: bash upgrade.sh
   args:
-    chdir: "{{ remote_tmp_dir }}/pam-vault-{{ upgrade_version }}"
+    chdir: "{{ remote_tmp_dir }}/pam-vault-{{ component_versions.vault | default(upgrade_version) }}"
   register: vault_upgrade_result
   ignore_errors: true
 

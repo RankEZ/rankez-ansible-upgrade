@@ -1,0 +1,60 @@
+# Detect installed RankEZ component versions (read-only; tag `check`).
+#
+# Per host: Docker image tags first, then a component-aware scan of install.conf /
+# VERSION files under install_path (emits `component=version` lines). The control
+# node aggregates every host and writes workspace state.json `installed_versions`
+# via scripts/detect_installed.py.
+#
+# VERIFY on a real system (open question 1): the exact Docker container/image
+# names and the install.conf / VERSION file location & format. The token matchers
+# in detect_installed.py are best-effort and may need adjusting.
+
+- name: Gather Docker container clues
+  command: docker ps --format '{{.Names}} {{.Image}}'
+  register: _rz_docker
+  changed_when: false
+  failed_when: false
+  tags: [check]
+
+- name: Gather install.conf / VERSION clues
+  shell: |
+    set -o pipefail
+    for d in "{{ install_path | default('/opt') }}"/*/; do
+      [ -d "$d" ] || continue
+      comp=$(basename "$d")
+      ver=$(grep -hoE '[0-9]+\.[0-9]+\.[0-9]+' \
+            "$d"/install.conf "$d"/VERSION "$d"/version 2>/dev/null \
+            | sort -V | tail -n 1)
+      [ -n "$ver" ] && echo "$comp=$ver"
+    done
+  register: _rz_markers
+  changed_when: false
+  failed_when: false
+  tags: [check]
+
+- name: Aggregate detected versions into state.json (control node)
+  delegate_to: localhost
+  run_once: yes
+  tags: [check]
+  vars:
+    _clues_json: >-
+      {%- set out = {} -%}
+      {%- for h in ansible_play_hosts -%}
+      {%- set _ = out.update({h: {
+          'docker': (hostvars[h].get('_rz_docker') or {}).get('stdout', '') or '',
+          'markers': (hostvars[h].get('_rz_markers') or {}).get('stdout', '') or ''
+      }}) -%}
+      {%- endfor -%}
+      {{ out | to_json }}
+    _ws: "{{ lookup('env', 'RANKEZ_UPGRADE_HOME') | default(ansible_env.HOME ~ '/.rankez-upgrade') }}"
+    _script: "{{ playbook_dir }}/scripts/detect_installed.py"
+  block:
+    - name: Write detection clues file
+      copy:
+        content: "{{ _clues_json }}"
+        dest: "{{ _ws }}/detection/clues.json"
+
+    - name: Parse and merge detected versions
+      command: python3 "{{ _script }}" --input "{{ _ws }}/detection/clues.json"
+      register: _detect_result
+      changed_when: false

@@ -10,7 +10,9 @@
 # in detect_installed.py are best-effort and may need adjusting.
 
 - name: Gather Docker container clues
-  command: docker ps --format '{{.Names}} {{.Image}}'
+  # --format uses docker's Go template syntax; wrap in {% raw %} so Ansible's
+  # Jinja engine passes {{.Names}}/{{.Image}} through literally.
+  command: docker ps --format '{% raw %}{{.Names}} {{.Image}}{% endraw %}'
   register: _rz_docker
   changed_when: false
   failed_when: false

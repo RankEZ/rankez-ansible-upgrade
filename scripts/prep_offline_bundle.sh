@@ -145,7 +145,15 @@ echo "[+] Downloading PAM Application Tarballs..."
 # release version (e.g. core 5.10.0 but a bundled utility 5.9.0). Fall back to
 # the release version when the manifest has no entry for that component.
 comp_ver() {
-    python3 "$MANIFEST_PY" tarball-version "$PAM_VERSION" "$1" "$PAM_VERSION" 2>/dev/null || echo "$PAM_VERSION"
+    local comp="$1" v
+    v="$(python3 "$MANIFEST_PY" tarball-version "$PAM_VERSION" "$comp" "" 2>/dev/null || echo "")"
+    if [ -n "$v" ]; then
+        echo "$v"
+    else
+        echo "Warning: '$comp' has no version in the manifest for $PAM_VERSION;" >&2
+        echo "         falling back to $PAM_VERSION (may not exist on the server)." >&2
+        echo "$PAM_VERSION"
+    fi
 }
 VAULT_VERSION="$(comp_ver vault)"
 PAC_VERSION="$(comp_ver pac)"

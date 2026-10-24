@@ -13,11 +13,12 @@
   command: docker --version
   register: docker_version_output
   changed_when: false
+  failed_when: false
   tags: [check]
 
 - name: Parse Docker version
   set_fact:
-    docker_version: "{{ docker_version_output.stdout | regex_search('Docker version ([0-9]+)', '\\\\1') | first }}"
+    docker_version: "{{ docker_version_output.stdout | default('') | regex_search('[0-9]+') | default('0', true) }}"
   tags: [check]
 
 - name: Fail if Docker version is less than 26

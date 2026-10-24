@@ -17,13 +17,14 @@ usage() {
 Usage: ./rankez-upgrade <command> [options]
 
 Commands:
-  setup       Create the workspace and .env (hidden password prompt), chmod 600.
+  init        Create the workspace .env (only if it does not already exist).
+  setup       Create/overwrite the workspace .env (always prompts).
   download    Download the offline bundle(s). `--plan` fetches every hop.
   inventory   Auto-discover components and generate the inventory.
   plan        Compute the upgrade plan (direct / multi-hop / inferred) from the manifest.
   check       Connectivity / sudo / docker / version-detection checks (no changes).
   upgrade     Run one hop; `--auto-hops` runs a full multi-hop chain.
-  all         Guided wizard: setup -> download -> inventory -> check -> upgrade.
+  all         Guided wizard: init -> download -> inventory -> check -> upgrade.
   doctor      Print resolved workspace paths and check environment.
 
 Upgrade flags: --current-version X --target X --auto-hops --allow-inferred
@@ -34,6 +35,17 @@ USAGE
 
 setup_cmd() {
     "$SCRIPTS/setup_workspace.sh" "$@"
+}
+
+init_cmd() {
+    # Create the .env only if it does not already exist (idempotent).
+    local env_file
+    env_file="$(rankez_workspace)/.env"
+    if [ -f "$env_file" ]; then
+        echo "==> .env already exists at $env_file; skipping init."
+        return 0
+    fi
+    setup_cmd "$@"
 }
 
 download_cmd() {
@@ -182,8 +194,8 @@ upgrade_cmd() {
 }
 
 all_cmd() {
-    echo "==> Step 1/5: setup"
-    setup_cmd
+    echo "==> Step 1/5: init (create .env if missing)"
+    init_cmd
     echo "==> Step 2/5: download"
     download_cmd
     echo "==> Step 3/5: inventory"
@@ -201,6 +213,7 @@ doctor_cmd() {
 CMD="${1:-}"
 shift || true
 case "$CMD" in
+    init)      init_cmd "$@" ;;
     setup)     setup_cmd "$@" ;;
     download)  download_cmd "$@" ;;
     inventory) inventory_cmd "$@" ;;

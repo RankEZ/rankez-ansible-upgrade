@@ -9,6 +9,7 @@
         can-upgrade "{{ current_version | default('unknown') }}" "{{ upgrade_version }}"
       register: _path_check
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
       changed_when: false
       failed_when: false
@@ -25,6 +26,7 @@
         - current_version | default('unknown') != 'unknown'
         - _path_check.rc | default(0) != 0
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
       tags: [always]
 
@@ -36,6 +38,7 @@
       set_fact:
         _required_pkgs: "{{ ['vault'] + (['pac'] if groups.get('pac') else []) + (['psm'] if groups.get('psm') else []) + (['cpm'] if groups.get('cpm') else []) + (['cp'] if groups.get('cp') else []) }}"
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
 
     - name: Assert required tarballs exist locally
@@ -43,6 +46,7 @@
         path: "{{ local_bundle_dir | realpath }}/pam-{{ item }}-{{ upgrade_version }}.tar.gz"
       register: _pkg_check
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
       loop: "{{ _required_pkgs }}"
 
@@ -55,6 +59,7 @@
           bundle, or pass --bundle-dir to point at the packages/ folder.
       when: not item.stat.exists
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
       loop: "{{ _pkg_check.results }}"
 
@@ -68,6 +73,7 @@
         _vault_hosts: "{{ groups.get('vaults', []) | length }}"
         _frontend_hosts: "{{ groups.get('frontend', []) | length }}"
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
 
     - name: Print planned upgrade order (dry-run summary)
@@ -78,6 +84,7 @@
           -> graceful shutdown -> transfer packages -> upgrade vaults ({{ _vault_hosts }}, serial)
           -> upgrade frontend PAC/PSM/CPM ({{ _frontend_hosts }}) -> upgrade CP.
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
 
     - name: Confirm before proceeding
@@ -86,6 +93,7 @@
         echo: yes
       register: _confirm
       delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
       when: not ansible_check_mode
 

@@ -38,8 +38,12 @@
 
 - name: Aggregate detected versions into state.json (control node)
   delegate_to: localhost
-  become: false   # control-node work; play-level become would sudo on localhost
-  run_once: yes
+  # This task runs on the control node (localhost), which never needs sudo, so
+  # override the play-level `become: yes` (that is meant for the targets only).
+  # ASSUMPTION: target VMs have passwordless sudo. If yours need a password,
+  # run with --ask-become-pass (-K).
+  become: false
+  run_once: true
   tags: [check]
   vars:
     _clues_json: >-

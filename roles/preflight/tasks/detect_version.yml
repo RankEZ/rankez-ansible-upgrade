@@ -38,6 +38,7 @@
 
 - name: Aggregate detected versions into state.json (control node)
   delegate_to: localhost
+  become: false   # control-node work; play-level become would sudo on localhost
   run_once: yes
   tags: [check]
   vars:

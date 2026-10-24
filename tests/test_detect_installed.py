@@ -40,5 +40,19 @@ class TestMerge(unittest.TestCase):
         self.assertEqual(conflicts, {"vault": ["5.8.0", "5.9.0"]})
 
 
+class TestOverallVersion(unittest.TestCase):
+    def test_all_agree(self):
+        self.assertEqual(D.overall_version({"vault": "5.8.0", "pac": "5.8.0"}, {}), "5.8.0")
+
+    def test_components_differ(self):
+        self.assertIsNone(D.overall_version({"vault": "5.8.0", "pac": "5.7.0"}, {}))
+
+    def test_conflicts_block(self):
+        self.assertIsNone(D.overall_version({"pac": "5.8.0"}, {"vault": ["5.8.0", "5.9.0"]}))
+
+    def test_nothing_detected(self):
+        self.assertIsNone(D.overall_version({}, {}))
+
+
 if __name__ == "__main__":
     unittest.main()

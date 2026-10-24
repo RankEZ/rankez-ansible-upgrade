@@ -109,6 +109,14 @@ def merge(hosts: dict):
     return merged, conflicts
 
 
+def overall_version(installed: dict, conflicts: dict) -> str | None:
+    """Single version if every detected component agrees on it, else None."""
+    if conflicts:
+        return None
+    vers = {v for v in installed.values() if v}
+    return vers.pop() if len(vers) == 1 else None
+
+
 def main() -> int:
     import argparse
     p = argparse.ArgumentParser(description=__doc__)
@@ -127,7 +135,17 @@ def main() -> int:
               "(half-finished upgrade?):", file=sys.stderr)
         for c, vs in conflicts.items():
             print(f"  {c}: {', '.join(vs)}", file=sys.stderr)
-    rc.save_state({"installed_versions": installed})
+    state: dict = {"installed_versions": installed}
+    cur = overall_version(installed, conflicts)
+    if cur:
+        # `rankez-upgrade upgrade` reads state.json `current_version`.
+        state["current_version"] = cur
+    elif conflicts:
+        state["current_version"] = None  # half-finished upgrade: don't trust a stale value
+    else:
+        print("WARNING: no installed version detected on any host; "
+              "pass --current-version X.Y.Z to upgrade.", file=sys.stderr)
+    rc.save_state(state)
     print(json.dumps(installed, sort_keys=True))
     return 0
 

@@ -46,6 +46,9 @@
   run_once: true
   tags: [check]
   vars:
+    # Inventory sets ansible_become=yes; a var beats the `become` keyword, so
+    # override it as a task var too.
+    ansible_become: false
     _clues_json: >-
       {%- set out = {} -%}
       {%- for h in ansible_play_hosts -%}

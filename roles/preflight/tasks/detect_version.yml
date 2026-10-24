@@ -29,6 +29,8 @@
             | sort -V | tail -n 1)
       [ -n "$ver" ] && echo "$comp=$ver"
     done
+  args:
+    executable: /bin/bash   # dash (Ubuntu /bin/sh) has no `set -o pipefail`
   register: _rz_markers
   changed_when: false
   failed_when: false
@@ -48,9 +50,15 @@
       }}) -%}
       {%- endfor -%}
       {{ out | to_json }}
-    _ws: "{{ lookup('env', 'RANKEZ_UPGRADE_HOME') | default(ansible_env.HOME ~ '/.rankez-upgrade') }}"
+    _ws: "{{ lookup('env', 'RANKEZ_UPGRADE_HOME') | default(lookup('env', 'HOME') ~ '/.rankez-upgrade', true) }}"
     _script: "{{ playbook_dir }}/scripts/detect_installed.py"
   block:
+    - name: Ensure detection directory exists
+      file:
+        path: "{{ _ws }}/detection"
+        state: directory
+        mode: "0700"
+
     - name: Write detection clues file
       copy:
         content: "{{ _clues_json }}"

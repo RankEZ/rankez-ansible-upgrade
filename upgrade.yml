@@ -34,16 +34,31 @@
   hosts: all
   gather_facts: no
   tasks:
+    - name: Resolve per-component tarball versions from the manifest
+      command: >-
+        python3 "{{ playbook_dir }}/scripts/lib/manifest.py" components "{{ upgrade_version }}"
+      register: _manifest_comps
+      delegate_to: localhost
+      vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
+      run_once: yes
+      changed_when: false
+      failed_when: false
+      tags: [always]
+
     - name: Build list of required package names from groups present
       set_fact:
         _required_pkgs: "{{ ['vault'] + (['pac'] if groups.get('pac') else []) + (['psm'] if groups.get('psm') else []) + (['cpm'] if groups.get('cpm') else []) + (['cp'] if groups.get('cp') else []) }}"
+        _component_versions: >-
+          {{ (_manifest_comps.stdout | default('{}') | from_json)
+             | combine(component_versions | default({}))
+             | default({}) }}
       delegate_to: localhost
       vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes
 
     - name: Assert required tarballs exist locally
       stat:
-        path: "{{ local_bundle_dir | realpath }}/pam-{{ item }}-{{ upgrade_version }}.tar.gz"
+        path: "{{ local_bundle_dir | realpath }}/pam-{{ item }}-{{ _component_versions[item] | default(upgrade_version) }}.tar.gz"
       register: _pkg_check
       delegate_to: localhost
       vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
@@ -54,10 +69,12 @@
       fail:
         msg: >-
           Missing upgrade package '{{ item.item }}'. Expected at
-          '{{ local_bundle_dir | realpath }}/pam-{{ item.item }}-{{ upgrade_version }}.tar.gz'.
-          Run ./scripts/prep_offline_bundle.sh (or ./rankez-upgrade download) to generate the
-          bundle, or pass --bundle-dir to point at the packages/ folder.
-      when: not item.stat.exists
+          '{{ item.stat.path }}'. If this component is not part of your
+          deployment, remove its group from the inventory; otherwise run
+          ./scripts/prep_offline_bundle.sh (or ./rankez-upgrade download
+          [--with-cp]) to generate it, or pass --bundle-dir to point at the
+          packages/ folder.
+      when: not (item.stat.exists | default(false))
       delegate_to: localhost
       vars: { ansible_become: false }  # control node: no sudo (inventory sets ansible_become=yes for targets)
       run_once: yes

@@ -37,7 +37,7 @@ import rankez_common as rc  # noqa: E402
 def _bundle_dir(version: str, os_hint: str | None) -> Path | None:
     """Resolve the packages/ dir for a version, mirroring pre_upgrade_inventory."""
     ws = rc.workspace_dir() / "bundles"
-    for os_name in ([os_hint] if os_hint else ["rhel", "ubuntu"]):
+    for os_name in ([os_hint] if os_hint else ["rhel9", "rhel10", "ubuntu22", "ubuntu24"]):
         cand = ws / f"onebox-offline-{os_name}-v{version}" / "packages"
         if cand.is_dir():
             return cand
@@ -64,7 +64,7 @@ def main() -> int:
     ap.add_argument("--allow-inferred", action="store_true")
     ap.add_argument("--yes", "-y", action="store_true", help="skip per-hop confirmation")
     ap.add_argument("--inventory", default=None, help="inventory path (default: workspace)")
-    ap.add_argument("--os", default=None, help="bundle OS hint (rhel|ubuntu)")
+    ap.add_argument("--os", default=None, help="bundle OS hint (rhel9|rhel10|ubuntu22|ubuntu24)")
     ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[1]))
     args = ap.parse_args()
 

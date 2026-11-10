@@ -40,7 +40,7 @@ def resolve_bundle_dir(version, os_hint=None, bundle_dir=None):
         searched.append(p)
         return (p if os.path.isdir(p) else None), searched
 
-    oss = [os_hint] if os_hint else ["rhel", "ubuntu"]
+    oss = [os_hint] if os_hint else ["rhel9", "rhel10", "ubuntu22", "ubuntu24"]
     roots = [os.getcwd(), os.path.join(os.getcwd(), "scripts")]
     workspace = rankez_common.workspace_dir()
     roots.append(str(workspace / "bundles"))
@@ -154,7 +154,8 @@ def main():
                         help="Target RankEZ upgrade version (default: state.json, else newest bundle)")
     parser.add_argument("--current-version", "--current", dest="current_version", default=None,
                         help="Installed version override (when the API does not expose it)")
-    parser.add_argument("--os", choices=["rhel", "ubuntu"], help="Target OS of the bundle (rhel or ubuntu)")
+    parser.add_argument("--os", choices=["rhel9", "rhel10", "ubuntu22", "ubuntu24"],
+                        help="Target OS of the bundle (rhel9, rhel10, ubuntu22 or ubuntu24)")
     parser.add_argument("--bundle-dir", help="Explicit path to the packages/ folder (contains pam-*.tar.gz)")
     parser.add_argument("--install-path", default=None,
                         help="Existing RankEZ installation base path (default: /opt)")
@@ -321,7 +322,7 @@ def main():
         for s in searched:
             print(f"  - {s}", file=sys.stderr)
         print("\nFix: run ./rankez-upgrade download, or pass --bundle-dir <path-to-packages> "
-              "and --os <rhel|ubuntu>.", file=sys.stderr)
+              "and --os <rhel9|rhel10|ubuntu22|ubuntu24>.", file=sys.stderr)
         exit(1)
     print(f"\nUsing bundle packages dir: {local_bundle_dir}")
 
@@ -346,8 +347,8 @@ def main():
         for p in missing:
             print(f"  - {p}", file=sys.stderr)
         print(f"\nFix: ./rankez-upgrade download --version {version} "
-              f"--os {args.os or 'rhel'} --with-cp" if groups["cp"] else
-              f"\nFix: ./rankez-upgrade download --version {version} --os {args.os or 'rhel'}")
+              f"--os {args.os or 'rhel9'} --with-cp" if groups["cp"] else
+              f"\nFix: ./rankez-upgrade download --version {version} --os {args.os or 'rhel9'}")
         exit(1)
 
     # Build the SSH connection vars.

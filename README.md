@@ -214,7 +214,7 @@ inventory with the correct user:
 Docker plugins on the target before continuing.
 
 **Missing tarball error** — the playbook asserts package existence up front. Run
-`./rankez-upgrade download --version <ver> --os rhel|ubuntu` to regenerate the bundle,
+`./rankez-upgrade download --version <ver> --os rhel9|rhel10|ubuntu22|ubuntu24` to regenerate the bundle,
 or pass `--bundle-dir` to point at the `packages/` folder.
 
 **`check` not recent** — `upgrade` refuses to run unless a check passed in the last 60
@@ -231,7 +231,7 @@ Each subcommand maps to a standalone script:
 
 ```bash
 # Download (non-interactive flags available)
-./scripts/prep_offline_bundle.sh --os rhel --version 5.9.0 --with-cp --packages-only
+./scripts/prep_offline_bundle.sh --os rhel9 --version 5.9.0 --with-cp --packages-only
 
 # Generate inventory (auto-discovers vault IPs unless overridden)
 python scripts/pre_upgrade_inventory.py \

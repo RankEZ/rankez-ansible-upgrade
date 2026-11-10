@@ -61,7 +61,7 @@ download_cmd() {
 
     if [ "$plan" -eq 1 ]; then
         # Fetch every hop's bundle (offline-friendly, before any downtime).
-        local os="${RANKEZ_UPGRADE_OS:-rhel}"
+        local os="${RANKEZ_UPGRADE_OS:-rhel9}"
         local targets
         targets="$(python3 - "$SCRIPTS" <<'PYEOF'
 import json, os, sys

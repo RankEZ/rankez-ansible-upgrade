@@ -31,7 +31,7 @@ fi
 # Allow --help before credential checks.
 case " $* " in
     *" -h "*|*" --help "*) 
-        echo "Usage: $0 [--os rhel|ubuntu] [--version X.Y.Z|latest] [--with-cp]"
+        echo "Usage: $0 [--os rhel9|rhel10|ubuntu22|ubuntu24] [--version X.Y.Z|latest] [--with-cp]"
         echo "             [--packages-only] [--yes] [--workspace DIR] [--output-dir DIR]"
         exit 0 ;;
 esac
@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
         --workspace) WORKSPACE="$2"; shift 2 ;;
         --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 [--os rhel|ubuntu] [--version X.Y.Z|latest] [--with-cp]"
+            echo "Usage: $0 [--os rhel9|rhel10|ubuntu22|ubuntu24] [--version X.Y.Z|latest] [--with-cp]"
             echo "             [--packages-only] [--yes] [--workspace DIR] [--output-dir DIR]"
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -75,25 +75,35 @@ if [ -n "$WORKSPACE" ]; then
 fi
 WS="$(rankez_workspace_ensure)"
 
-# 1. Select Target OS
+# 1. Select Target OS (also derives the Docker image + distro params used to
+#    fetch OS-specific Docker/system packages).
 if [ -z "$TARGET_OS" ]; then
-    echo "Select Target Operating System:"
-    echo "  1) Ubuntu 22.04 / 24.04 / 26.04 (Debian-based)"
-    echo "  2) RHEL 9 / Oracle Linux 9 / Rocky 9 (RHEL-based)"
-    read -p "Enter choice [1-2]: " OS_CHOICE
+    echo "Select Target Operating System (Manual Download Required for OS not listed):"
+    echo "  1) Ubuntu 22.04"
+    echo "  2) Ubuntu 24.04"
+    echo "  3) RHEL 9 / Oracle Linux 9 / Rocky 9"
+    echo "  4) RHEL 10 / Oracle Linux 10"
+    read -p "Enter choice [1-4]: " OS_CHOICE
 
     case "$OS_CHOICE" in
-        1) TARGET_OS="ubuntu"; DOCKER_IMG="ubuntu:26.04" ;;
-        2) TARGET_OS="rhel"; DOCKER_IMG="oraclelinux:9" ;;
+        1) TARGET_OS="ubuntu22" ;;
+        2) TARGET_OS="ubuntu24" ;;
+        3) TARGET_OS="rhel9" ;;
+        4) TARGET_OS="rhel10" ;;
         *) echo "Invalid choice. Exiting."; exit 1 ;;
     esac
-else
-    case "$TARGET_OS" in
-        ubuntu) DOCKER_IMG="ubuntu:26.04" ;;
-        rhel) DOCKER_IMG="oraclelinux:9" ;;
-        *) echo "Invalid --os value: $TARGET_OS (expected rhel|ubuntu). Exiting." >&2; exit 1 ;;
-    esac
 fi
+
+# Map the target OS to a Docker base image plus distro-specific parameters.
+# Docker publishes per-release packages for each distro, so the base image and
+# codename/releasever must match the target exactly.
+case "$TARGET_OS" in
+    ubuntu22) OS_FAMILY="ubuntu"; DOCKER_IMG="ubuntu:22.04";  CODENAME="jammy" ;;
+    ubuntu24) OS_FAMILY="ubuntu"; DOCKER_IMG="ubuntu:24.04";  CODENAME="noble" ;;
+    rhel9)    OS_FAMILY="rhel";   DOCKER_IMG="oraclelinux:9";  RELEASEVER="9" ;;
+    rhel10)   OS_FAMILY="rhel";   DOCKER_IMG="oraclelinux:10"; RELEASEVER="10" ;;
+    *) echo "Invalid --os value: $TARGET_OS (expected rhel9|rhel10|ubuntu22|ubuntu24). Exiting." >&2; exit 1 ;;
+esac
 
 # 2. Input PAM Version (resolved against the release manifest)
 CURRENT_YEAR=$(date +%Y)
@@ -199,16 +209,16 @@ else
 echo ""
 echo "[+] Downloading System & Docker packages for ${TARGET_OS} (using Docker container)..."
 
-if [ "$TARGET_OS" = "ubuntu" ]; then
-    if [ -f /etc/os-release ] && grep -q "ubuntu" /etc/os-release; then
-        echo " -> Running directly on Ubuntu host. Fetching packages locally..."
+if [ "$OS_FAMILY" = "ubuntu" ]; then
+    if [ -f /etc/os-release ] && grep -q "ubuntu" /etc/os-release && [ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "$CODENAME" ]; then
+        echo " -> Running directly on matching Ubuntu host ($CODENAME). Fetching packages locally..."
         sudo apt-get update
         sudo apt-get install -y ca-certificates curl gnupg
         sudo install -m 0755 -d /etc/apt/keyrings
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
         sudo chmod a+r /etc/apt/keyrings/docker.gpg
         . /etc/os-release
-        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         sudo apt-get update
         sudo apt-get install --download-only -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin telnet ufw wget tar curl ca-certificates gnupg
         cp -r /var/cache/apt/archives/*.deb "$(pwd)/${BUNDLE_DIR}/system_deps/"
@@ -221,7 +231,7 @@ if [ "$TARGET_OS" = "ubuntu" ]; then
             install -m 0755 -d /etc/apt/keyrings && \
             curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
             . /etc/os-release && \
-            echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \${VERSION_CODENAME} stable\" > /etc/apt/sources.list.d/docker.list && \
+            echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${CODENAME} stable\" > /etc/apt/sources.list.d/docker.list && \
             apt-get update && \
             cd /dist && \
             apt-get install --download-only -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin telnet ufw wget tar curl ca-certificates gnupg && \
@@ -230,12 +240,12 @@ if [ "$TARGET_OS" = "ubuntu" ]; then
     else
         echo "Warning: Docker is not installed and host is not Ubuntu. System packages (.deb) will be skipped."
     fi
-elif [ "$TARGET_OS" = "rhel" ]; then
+elif [ "$OS_FAMILY" = "rhel" ]; then
     if command -v docker &> /dev/null; then
         docker run --rm -v "$(pwd)/${BUNDLE_DIR}/system_deps:/dist" $DOCKER_IMG bash -c "
             dnf install -y dnf-plugins-core && \
             dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo && \
-            sed -i 's/\$releasever/9/g' /etc/yum.repos.d/docker-ce.repo && \
+            sed -i 's/\$releasever/'${RELEASEVER}'/g' /etc/yum.repos.d/docker-ce.repo && \
             cd /dist && \
             dnf download --resolve --destdir=/dist docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras telnet firewalld wget tar curl
         "
